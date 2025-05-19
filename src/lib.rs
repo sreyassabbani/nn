@@ -1,4 +1,8 @@
 // #![allow(unused)]
+mod activation;
+pub mod layer;
+pub mod network;
+mod tensor;
 
 #[derive(Debug, Clone)]
 pub struct Node(f64);
@@ -136,7 +140,10 @@ impl Network {
                     for (i, row) in self.weights[l].0.0.iter_mut().enumerate() {
                         let error = layer.nodes[i].0 - data.expect;
                         for (j, weight) in row.iter_mut().enumerate() {
-                            *weight -= eta * 2.0 * error * inputs[j].0;
+                            let sd = -2.0 * inputs[j].0 * (*weight);
+                            // dbg!(sd);
+                            *weight -= eta * 2.0 * error * inputs[j].0 / (sd.abs() + 1.0);
+                            // *weight -= eta * 2.0 * error * inputs[j].0;
                         }
                     }
                 }
