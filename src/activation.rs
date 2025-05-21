@@ -1,7 +1,8 @@
 use crate::layer::Transform;
 
-pub trait Activation<T>: Transform<T> {}
+pub trait Activation<T>: Transform<T> + std::fmt::Debug {}
 
+#[derive(Debug)]
 pub struct Sigmoid;
 
 impl Transform<f64> for Sigmoid {
@@ -17,6 +18,7 @@ impl Transform<f64> for Sigmoid {
 
 impl Activation<f64> for Sigmoid {}
 
+#[derive(Debug)]
 pub struct ReLU;
 
 impl Transform<f64> for ReLU {
@@ -31,6 +33,7 @@ impl Transform<f64> for ReLU {
 
 impl Activation<f64> for ReLU {}
 
+#[derive(Debug)]
 pub struct SiLU {
     beta: f64,
 }

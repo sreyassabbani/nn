@@ -1,12 +1,12 @@
 use nn::activation::{ReLU, Sigmoid};
-use nn::layer::{LayerBuilder, ModelBuilder};
+use nn::layer::{LayerBuilder, ModelBuilder, dense};
 
 fn main() {
-    let layer = LayerBuilder::dense::<128>().activation(ReLU);
     let network = ModelBuilder::new()
-        .add_layer::<ReLU, 64>(LayerBuilder::dense::<128>().activation(ReLU))
-        .add_layer::<Sigmoid, 1>(LayerBuilder::dense::<64>().activation(Sigmoid))
-        .build();
+        .input(dense!(128, 64).activation(ReLU))
+        .hidden(dense!(64, 64).activation(ReLU))
+        .hidden(dense!(64, 64).activation(ReLU))
+        .output(dense!(64, 1).activation(Sigmoid));
 
     // TODO: expected API
 

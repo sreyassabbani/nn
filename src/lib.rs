@@ -1,6 +1,9 @@
 // #![allow(unused)]
 pub mod activation;
+
+#[macro_use]
 pub mod layer;
+
 pub mod network;
 mod tensor;
 

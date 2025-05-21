@@ -12,143 +12,100 @@ pub trait Layerable {
     fn output_size(&self) -> usize;
 }
 
-impl<T, A: Activation<T>, const I: usize, const O: usize> Layerable for Layer<T, A, I, O> {
+#[derive(Debug)]
+pub struct Layer<T, const I: usize, const O: usize> {
+    nodes: Vector<T, I>,
+    weights: Matrix<T, O, I>,
+    biases: Vector<T, O>,
+    activation: Box<dyn Activation<T>>,
+}
+
+impl<T, const I: usize, const O: usize> Layerable for Layer<T, I, O> {
     fn output_size(&self) -> usize {
         O
     }
 }
 
-#[derive(Debug)]
-pub struct Layer<T, A: Activation<T>, const I: usize, const O: usize> {
-    nodes: Vector<T, I>,
-    weights: Matrix<T, O, I>,
-    biases: Vector<T, O>,
-    _activation: PhantomData<A>,
+pub struct LayerBuilder<T, AS, const I: usize, const O: usize> {
+    activation: Option<Box<dyn Activation<T>>>,
+    _state: PhantomData<AS>,
 }
 
-// marker types for activation state
 pub struct ActivationUnset;
 pub struct ActivationSet<A>(PhantomData<A>);
 
-// marker types for dimensions state
-pub struct DimensionsUnset;
-pub struct DimensionsSet<const D: usize>;
-
-pub struct LayerBuilder<T, AS, IDS, ODS> {
-    activation: Option<Box<dyn Activation<T>>>,
-    _activation_state: PhantomData<AS>,
-    _input_dimensions_state: PhantomData<IDS>,
-    _output_dimensions_state: PhantomData<ODS>,
-}
-
-impl<T> LayerBuilder<T, ActivationUnset, DimensionsUnset, DimensionsUnset> {
-    pub fn new() -> Self {
-        Self {
-            activation: None,
-            _activation_state: PhantomData,
-            _input_dimensions_state: PhantomData,
-            _output_dimensions_state: PhantomData,
-        }
-    }
-}
-
-impl<T, IDS, ODS> LayerBuilder<T, ActivationUnset, IDS, ODS> {
-    pub fn activation<A: Activation<T> + 'static>(
-        self,
-        activation: A,
-    ) -> LayerBuilder<T, ActivationSet<A>, IDS, ODS> {
-        LayerBuilder {
-            activation: Some(Box::new(activation)),
-            _activation_state: PhantomData,
-            _input_dimensions_state: PhantomData,
-            _output_dimensions_state: PhantomData,
-        }
-    }
-}
-
-impl<T> LayerBuilder<T, ActivationUnset, DimensionsUnset, DimensionsUnset> {
-    /// Make a new [`LayerBuilder`] by specifying input dimensions. Starts the layer-building chain.
-    pub fn dense<const I: usize>()
-    -> LayerBuilder<T, ActivationUnset, DimensionsSet<I>, DimensionsUnset> {
+impl<T, const I: usize, const O: usize> LayerBuilder<T, ActivationUnset, I, O> {
+    pub fn dense() -> Self {
         LayerBuilder {
             activation: None,
-            _activation_state: PhantomData,
-            _input_dimensions_state: PhantomData,
-            _output_dimensions_state: PhantomData,
+            _state: PhantomData,
         }
     }
 }
 
-impl<T, A, const I: usize> LayerBuilder<T, A, DimensionsSet<I>, DimensionsUnset> {
-    /// Internal function to set output dimensions. Used while zipping together layers in the model-building phase.
-    fn set_output_dimensions<const O: usize>(
-        self,
-    ) -> LayerBuilder<T, A, DimensionsSet<I>, DimensionsSet<O>> {
-        LayerBuilder {
-            activation: None,
-            _activation_state: PhantomData,
-            _input_dimensions_state: PhantomData,
-            _output_dimensions_state: PhantomData,
-        }
-    }
-}
-
-impl<T, AS> LayerBuilder<T, AS, DimensionsUnset, DimensionsUnset> {
-    /// Add input and output dimensions for a [`LayerBuilder`].
-    pub fn with_dimensions<const I: usize, const O: usize>(
-        self,
-    ) -> LayerBuilder<T, AS, DimensionsSet<I>, DimensionsSet<O>> {
-        LayerBuilder {
-            activation: self.activation,
-            _activation_state: PhantomData,
-            _input_dimensions_state: PhantomData,
-            _output_dimensions_state: PhantomData,
-        }
-    }
-}
-
-impl<A: Activation<f64>, const I: usize, const O: usize>
-    LayerBuilder<f64, ActivationSet<A>, DimensionsSet<I>, DimensionsSet<O>>
-{
-    /// Finish the layer-building chain by constructing a ready-to-go [`Layer`], consuming [`LayerBuilder`].
-    pub fn build(self) -> Layer<f64, A, I, O> {
+impl<const I: usize, const O: usize> LayerBuilder<f64, ActivationUnset, I, O> {
+    /// Set an activation function, finalizing [`Layer<I, O>`]
+    pub fn activation<A: Activation<f64> + 'static>(self, act: A) -> Layer<f64, I, O> {
         Layer {
             nodes: Vector::random(),
             weights: Matrix::random(),
             biases: Vector::random(),
-            _activation: PhantomData,
+            activation: Box::new(act),
         }
     }
 }
 
-pub struct ModelBuilder<const PREV: usize> {
+/// Entry point for model-building
+pub struct ModelBuilder;
+
+pub struct Model<const PREV: usize> {
     layers: Vec<Box<dyn Layerable>>,
 }
 
-pub struct Model {
+pub struct Perceptron<const O: usize> {
     layers: Vec<Box<dyn Layerable>>,
 }
 
-impl<const PREV: usize> ModelBuilder<PREV> {
+impl ModelBuilder {
+    /// Instantiate a new [`ModelBuilder`].
     pub fn new() -> Self {
-        Self { layers: Vec::new() }
+        ModelBuilder
     }
 
-    pub fn add_layer<A: Activation<f64> + 'static, const O: usize>(
-        mut self,
-        layer: LayerBuilder<f64, ActivationSet<A>, DimensionsSet<PREV>, DimensionsUnset>,
-    ) -> ModelBuilder<O> {
-        self.layers
-            .push(Box::new(layer.set_output_dimensions::<O>().build()));
-
-        ModelBuilder {
-            layers: self.layers,
+    /// Start the model-building process by passing in an input layer.
+    pub fn input<const I: usize, const O: usize>(self, layer: Layer<f64, I, O>) -> Model<O> {
+        Model {
+            layers: vec![Box::new(layer)],
         }
     }
+}
 
-    pub fn build(self) -> Model {
+impl<const PREV: usize> Model<PREV> {
+    /// Add hidden layers to your [`Model`].
+    ///
+    /// Note: your [`Model`] is generic over `PREV`, [`Model<PREV>`], until you call `output`, which finalizes the model.
+    pub fn hidden<const O: usize>(mut self, layer: Layer<f64, PREV, O>) -> Model<O> {
+        self.layers.push(Box::new(layer));
         Model {
             layers: self.layers,
         }
     }
+
+    /// Add the final output layer, returning a [`Perceptron`].
+    pub fn output<const O: usize>(mut self, layer: Layer<f64, PREV, O>) -> Perceptron<O> {
+        self.layers.push(Box::new(layer));
+        Perceptron {
+            layers: self.layers,
+        }
+    }
 }
+
+/// Macro for instantiating a new `dense` layer, with an input size and an output size.
+#[macro_export]
+macro_rules! __dense_inner {
+    ($i:expr, $o:expr) => {
+        $crate::layer::LayerBuilder::<f64, $crate::layer::ActivationUnset, $i, $o>::dense()
+    };
+}
+
+pub use __dense_inner as dense;
