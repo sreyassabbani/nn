@@ -1,5 +1,5 @@
 // #![allow(unused)]
-mod activation;
+pub mod activation;
 pub mod layer;
 pub mod network;
 mod tensor;

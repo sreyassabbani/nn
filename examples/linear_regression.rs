@@ -1,36 +1,24 @@
-use nn::*;
+use nn::activation::{ReLU, Sigmoid};
+use nn::layer::{LayerBuilder, ModelBuilder};
 
 fn main() {
-    let input = Layer::from([1.0]);
-    let empty = Layer::from([0.0]);
-    let weights = vec![Weight::from([[1.0]])];
-    let biases = vec![vec![Bias(2.0)]];
+    let layer = LayerBuilder::dense::<128>().activation(ReLU);
+    let network = ModelBuilder::new()
+        .add_layer::<ReLU, 64>(LayerBuilder::dense::<128>().activation(ReLU))
+        .add_layer::<Sigmoid, 1>(LayerBuilder::dense::<64>().activation(Sigmoid))
+        .build();
 
-    let mut network = Network::new(vec![empty], weights, biases);
+    // TODO: expected API
 
-    network.train(
-        &[
-            Input {
-                layer: input.clone(),
-                expect: 4.0,
-            },
-            Input {
-                layer: Layer::from([2.0]),
-                expect: 6.0,
-            },
-            Input {
-                layer: input,
-                expect: 4.0,
-            },
-        ],
-        0.2,
-        2000,
-    );
+    // train
+    // let train_data = [(1.0, 2.0), (3.0, 2.0)].map(DataSample::from);
+    // let eta = 0.3; // learning rate
+    // let epochs = 2000;
+    // network.train(&train_data, 0.3, epochs);
 
-    let cost = &network.run(&Input {
-        layer: Layer::from([3.0]),
-        expect: 8.0,
-    });
+    // test
+    // let test_data = [(5.0, 2.0), (52.0, 2.0)];
+    // let cost = network.cost(&test_data);
 
-    dbg!(cost);
+    // dbg!(cost);
 }
