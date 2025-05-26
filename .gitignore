@@ -1,1 +1,5 @@
-/target
+# Ferris hideout
+target
+
+# IDE/rust-analyzer config
+.helix

@@ -1,12 +1,17 @@
+#![feature(generic_arg_infer)]
+
 use nn::activation::{ReLU, Sigmoid};
-use nn::layer::{LayerBuilder, ModelBuilder, dense};
+use nn::{
+    layer::{dense, dim},
+    network::ModelBuilder,
+};
 
 fn main() {
     let network = ModelBuilder::new()
-        .input(dense!(128, 64).activation(ReLU))
-        .hidden(dense!(64, 64).activation(ReLU))
-        .hidden(dense!(64, 64).activation(ReLU))
-        .output(dense!(64, 1).activation(Sigmoid));
+        .input(dim!(128))
+        .hidden(dense!(64).activation(ReLU))
+        .hidden(dense!(64).activation(Sigmoid))
+        .output(dim!(1));
 
     // TODO: expected API
 

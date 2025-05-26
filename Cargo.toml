@@ -3,13 +3,16 @@ name = "nn"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+unstable = []
+
 [dependencies]
-plotters = "0.3.7"
 rand = "0.9.1"
 
 [[example]]
 name = "linear-regression"
 path = "./examples/linear_regression.rs"
+required-features = ["unstable"]
 
 [[example]]
 name = "quadratic-regression"
