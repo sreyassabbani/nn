@@ -58,7 +58,21 @@ let network = ModelBuilder::new()
   .hidden(LayerBuilder::dense(dim!(64)).activation(ReLU))
   .output(dim!(1));
 ```
-Although it's significantly more terse, I feel it makes the structure of what you're building so much more obvious.
+Although it's significantly more terse, I feel it makes the structure of what you're building so much more obvious. For this particularly, I went from `.input::<N>()` to `.input(Dimension::<N>)` to `.input(dim!(N))`, the progression between which is most likely clear.
+
+### More Thoughts
+Using `generic_const_exprs`, it is possible to store a `BREADTH` value so that the following memory layout can be achieved.
+```
+[--INPUT--] [--LAYER 1--] [--LAYER 2--] [--LAYER 3--] .. [--LAYER N--]
+```
+Where `INPUT = [f64; BREADTH]`. If I store these layers in a vector, then they must be of the same type. We've tried trait objects, and we don't want that. So we try enums. Enums end up looking like
+```rs
+pub enum Layer {
+  L1(LayerVariant<1>),
+  // ... [perhaps increment only by ]
+  L512(LayerVariant<512>),
+}
+```
 
 ### Training/Testing
 
@@ -73,3 +87,12 @@ dbg!(cost);
 
 > [!NOTE]
 > This part is still being refactored.
+
+## Issues
+Consider the following block of code.
+```rs
+for layer in network.layers() {
+  dbg!(layer.weights())
+}
+```
+You may think this should be easy to pull off because a network with type `Perceptron` can easily expose a `Perceptron::layers` method returning a reference to the private field `layers`, while each layer can return its corresponding `weights` field. However, the issue becomes adding another required method to `Layerable`, the trait interface that makes the heterogenous `layers` field possible. As I was afraid from the beginning, this demolishes any compile-time checks, which is horrible.

@@ -3,15 +3,6 @@ use std::marker::PhantomData;
 use crate::activation::Activation;
 use crate::tensor::{Matrix, Vector};
 
-pub trait Transform<T> {
-    fn forward(&self, input: T) -> T;
-    fn backward(&self, input: T) -> T;
-}
-
-pub trait Layerable: Transform<Vec<f64>> {
-    fn output_size(&self) -> usize;
-}
-
 pub struct Dimension<const D: usize>;
 
 #[derive(Debug)]
@@ -22,23 +13,43 @@ pub struct Layer<T, const I: usize, const O: usize> {
     pub(crate) activation: Box<dyn Activation<T>>,
 }
 
-impl<const I: usize, const O: usize> Layerable for Layer<f64, I, O> {
-    fn output_size(&self) -> usize {
-        O
+#[rustfmt::skip]
+macro_rules! all_layers {
+    ($name:ident) => {
+        $name!(T1);
+        $name!(T1, T2);
+        $name!(T1, T2, T3);
+        $name!(T1, T2, T3, T4);
+        $name!(T1, T2, T3, T4, T5);
+        $name!(T1, T2, T3, T4, T5, T6);
+        $name!(T1, T2, T3, T4, T5, T6, T7);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
     }
 }
 
-impl<const I: usize, const O: usize> Transform<Vec<f64>> for Layer<f64, I, O> {
-    fn forward(&self, input: Vec<f64>) -> Vec<f64> {
-        assert_eq!(I, input.len());
-        (&self.biases + &self.weights * input)
-            .iter()
-            .map(|&n| self.activation.forward(n))
-            .collect()
-    }
-    fn backward(&self, input: Vec<f64>) -> Vec<f64> {
-        input
-    }
+macro_rules! impl_layer {
+    () => {
+        impl<const I: usize, const O: usize> Layer<f64, I, O> {
+            fn forward(&self, input: [f64; I]) -> Vec<f64> {
+                assert_eq!(I, input.len());
+                (&self.biases + &self.weights * input)
+                    .iter()
+                    .map(|&n| self.activation.forward(n))
+                    .collect()
+            }
+            fn backward(&self, input: Vec<f64>) -> Vec<f64> {
+                input
+            }
+        }
+    };
 }
 
 pub struct LayerBuilder<T, AS, const I: usize, const O: usize> {
@@ -67,6 +78,12 @@ impl<const I: usize, const O: usize> LayerBuilder<f64, ActivationUnset, I, O> {
             biases: Vector::random(),
             activation: Box::new(act),
         }
+    }
+}
+
+impl<const I: usize, const O: usize> Layer<f64, I, O> {
+    pub fn weights(&self) -> &Matrix<f64, O, I> {
+        &self.weights
     }
 }
 

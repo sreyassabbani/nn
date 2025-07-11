@@ -49,3 +49,9 @@ impl<const N: usize> ops::Add<Vec<f64>> for &Vector<f64, N> {
             .collect()
     }
 }
+
+impl<const N: usize> From<Vector<f64, N>> for Vec<f64> {
+    fn from(value: Vector<f64, N>) -> Self {
+        value.entries.to_vec()
+    }
+}
