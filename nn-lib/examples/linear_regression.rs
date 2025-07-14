@@ -3,9 +3,10 @@
 
 // use nn::activation::{ReLU, Sigmoid};
 use nn::{
+    network as nt,
     // layer::{dense, dim},
     // network::{ModelBuilder},
-    network::network as nt,
+    network::{DenseLayer, LayerInit, NetworkTrait, ReLU},
 };
 
 fn main() {
@@ -16,7 +17,7 @@ fn main() {
     //     .output(dim!(1));
 
     let nt = nt! {
-        input(784) -> dense(128) -> relu -> dense(64) -> output
+        input(784) -> dense(128) -> relu -> dense(64)-> relu -> dense(64)-> relu -> dense(64)-> relu -> dense(64) -> output
     };
 
     // TODO: expected API
@@ -32,4 +33,8 @@ fn main() {
     // let cost = network.cost(&test_data);
 
     // dbg!(cost);
+}
+
+fn type_of<T>(_: &T) -> &'static str {
+    std::any::type_name::<T>()
 }
