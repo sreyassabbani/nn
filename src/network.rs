@@ -1,67 +1,129 @@
-use crate::layer::{Layer, Layerable, Dimension};
-
-use std::marker::PhantomData;
-
-/// Entry point for model-building
-pub struct ModelBuilder<IS, S> {
-    layers: Vec<Box<dyn Layerable>>,
-    _state: PhantomData<(IS, S)>,
+// Define the DenseLayer struct with weights and biases
+pub struct DenseLayer<const IN: usize, const OUT: usize> {
+    weights: [[f32; IN]; OUT],
+    biases: [f32; OUT],
 }
 
-pub struct InputSet<const I: usize>;
-pub struct InputUnset;
+// Define activation structs
+pub struct ReLU;
+pub struct Sigmoid;
 
-pub struct Uninitialized;
-pub struct Initialized;
-pub struct Accepting<const PREV: usize>;
-
-pub struct Perceptron<const I: usize, const O: usize> {
-    layers: Vec<Box<dyn Layerable>>,
-}
-
-impl ModelBuilder<InputUnset, Uninitialized> {
-    /// Instantiate a new [`ModelBuilder`].
-    pub fn new() -> ModelBuilder<InputUnset, Initialized>{
-        ModelBuilder { layers: Vec::new(), _state: PhantomData }
-    }
-}
-
-impl ModelBuilder<InputUnset, Initialized> {
-    /// Start the model-building process by passing in an input layer.
-    pub fn input<const I: usize>(self, dim: Dimension<I>) -> ModelBuilder<InputSet<I>, Accepting<I>> {
-        ModelBuilder { layers: self.layers, _state: PhantomData }
-    }
-}
-
-impl<const I: usize, const PREV: usize> ModelBuilder<InputSet<I>, Accepting<PREV>> {
-
-    /// Add hidden layers to your [`Model`].
-    ///
-    /// Note: your [`Model`] is generic over `PREV`, [`Model<PREV>`], until you call `output`, which finalizes the model.
-    pub fn hidden<const O: usize>(mut self, layer: Layer<f64, PREV, O>) -> ModelBuilder<InputSet<I>, Accepting<O>> {
-        self.layers.push(Box::new(layer));
-        ModelBuilder {
-            layers: self.layers,
-            _state: PhantomData
-        }
-    }
-
-    /// Add the final output layer, returning a [`Perceptron`].
-    pub fn output<const O: usize>(mut self, dim: Dimension<O>) -> Perceptron<I, O> {
-        Perceptron {
-            layers: self.layers,
+// Forward pass implementation for ReLU
+impl ReLU {
+    pub fn forward<const N: usize>(&self, input: &[f32; N], output: &mut [f32; N]) {
+        for i in 0..N {
+            output[i] = input[i].max(0.0);
         }
     }
 }
 
-impl<const I: usize, const O: usize> Perceptron<I, O> {
-    pub fn train(&mut self) {}
-
-    // Run the perceptron model on a given `input` whose ownership is taken.
-    // pub fn run(&self, input: Layer<f64, I, O>) {
-    //     let output_layer = self
-    //         .layers
-    //         .iter()
-    //         .fold(input, |acc, &layer| layer.forward(acc));
-    // }
+// Forward pass implementation for Sigmoid
+impl Sigmoid {
+    pub fn forward<const N: usize>(&self, input: &[f32; N], output: &mut [f32; N]) {
+        for i in 0..N {
+            output[i] = 1.0 / (1.0 + (-input[i]).exp());
+        }
+    }
 }
+
+// Trait for initializing layers
+pub trait LayerInit {
+    fn init() -> Self;
+}
+
+// Initialize DenseLayer (simplified; real init would use proper randomization)
+impl<const IN: usize, const OUT: usize> LayerInit for DenseLayer<IN, OUT> {
+    fn init() -> Self {
+        Self {
+            weights: [[0.0; IN]; OUT],
+            biases: [0.0; OUT],
+        }
+    }
+}
+
+// Initialize ReLU
+impl LayerInit for ReLU {
+    fn init() -> Self {
+        ReLU
+    }
+}
+
+// Initialize Sigmoid
+impl LayerInit for Sigmoid {
+    fn init() -> Self {
+        Sigmoid
+    }
+}
+
+// Trait for network functionality
+pub trait NetworkTrait<const IN: usize, const OUT: usize> {
+    fn forward(&self, input: &[f32; IN]) -> [f32; OUT];
+    fn train(&mut self, data: &[[f32; IN]], targets: &[[f32; OUT]]);
+}
+
+// Forward pass for DenseLayer (basic implementation)
+impl<const IN: usize, const OUT: usize> DenseLayer<IN, OUT> {
+    pub fn forward(&self, input: &[f32; IN], output: &mut [f32; OUT]) {
+        for o in 0..OUT {
+            let mut sum = self.biases[o];
+            for i in 0..IN {
+                sum += self.weights[o][i] * input[i];
+            }
+            output[o] = sum;
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! __network {
+    // strip off the leading `input(N) ->`
+    (input($in:expr) -> $($rest:tt)*) => {
+        // call the recursive helper with:
+        //  – an empty accumulator `()` for the tuple‐types
+        //  – the current “in size” = $in
+        $crate::__network!(@accumulate (), $in, $($rest)*);
+    };
+
+    // end recursion
+    (@accumulate ( $($types:ty,)* ), $cur_in:literal, output) => {
+        {
+            struct Net(($($types,)*));
+
+            impl Net {
+                pub fn new() -> Self {
+                    Net ((
+                        $(<$types as $crate::network::LayerInit>::init(),)*
+                    ))
+                }
+            }
+
+            Net::new()
+        }
+    };
+
+    (@accumulate ( $($types:ty,)* ), $cur_in:expr, dense($mid:expr) -> $($rest:tt)* ) => {
+        $crate::__network!(@accumulate
+            ( $($types,)* $crate::network::DenseLayer<$cur_in,$mid>, ),
+            $mid,
+            $($rest)*
+        );
+    };
+
+    (@accumulate ( $($types:ty,)* ), $cur_in:expr, relu -> $($rest:tt)* ) => {
+        $crate::__network!(@accumulate
+            ( $($types,)* $crate::network::ReLU, ),
+            $cur_in,
+            $($rest)*
+        );
+    };
+
+    (@accumulate ( $($types:ty,)* ), $cur_in:expr, sigmoid -> $($rest:tt)* ) => {
+        $crate::__network!(@accumulate
+            ( $($types,)* Sigmoid, ),
+            $cur_in,
+            $($rest)*
+        );
+    };
+}
+
+pub use __network as network;
