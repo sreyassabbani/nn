@@ -57,7 +57,7 @@ impl LayerInit for Sigmoid {
 
 // Trait for network functionality
 pub trait NetworkTrait<const IN: usize, const OUT: usize> {
-    fn forward(&self, input: &[f32; IN]) -> [f32; OUT];
+    fn forward(&mut self, input: &[f32; IN]) -> [f32; OUT];
     fn train(&mut self, data: &[[f32; IN]], targets: &[[f32; OUT]]);
 }
 
@@ -76,54 +76,136 @@ impl<const IN: usize, const OUT: usize> DenseLayer<IN, OUT> {
 
 #[macro_export]
 macro_rules! __network {
-    // strip off the leading `input(N) ->`
-    (input($in:expr) -> $($rest:tt)*) => {
-        // call the recursive helper with:
-        //  – an empty accumulator `()` for the tuple‐types
-        //  – the current “in size” = $in
-        $crate::__network!(@accumulate (), $in, $($rest)*);
-    };
-
-    // end recursion
-    (@accumulate ( $($types:ty,)* ), $cur_in:literal, output) => {
-        {
-            struct Net(($($types,)*));
-
-            impl Net {
-                pub fn new() -> Self {
-                    Net ((
-                        $(<$types as $crate::network::LayerInit>::init(),)*
-                    ))
-                }
-            }
-
-            Net::new()
+    // Entry point: start building the network
+    (input($in:literal) -> $($rest:tt)*) => {
+        $crate::network::network! {
+            @build
+            $in,              // Original input size
+            $in,              // Current size
+            ([f32; $in],),    // Buffer types start with input
+            ([0.0; $in],),    // Buffer initializations
+            (),               // Layers tuple
+            0,                // Layer index
+            0,                // Previous buffer index
+            1,                // Current buffer index
+            {},               // Forward statements
+            {},               // Training buffers (placeholder)
+            $($rest)*         // Remaining tokens
         }
     };
 
-    (@accumulate ( $($types:ty,)* ), $cur_in:expr, dense($mid:expr) -> $($rest:tt)* ) => {
-        $crate::__network!(@accumulate
-            ( $($types,)* $crate::network::DenseLayer<$cur_in,$mid>, ),
-            $mid,
+    // Dense layer handler
+    (@build
+        $orig_in:expr, $current_size:expr, ($($buf_types:ty,)*), ($($buf_init:expr,)*), ($($layers:ty,)*), $layer_idx:expr,
+        $prev_buf_idx:expr, $buf_idx:expr,
+        {$($fwd_stmts:tt)*}, {$($train_bufs:tt)*},
+        dense($out:literal) -> $($rest:tt)*
+    ) => {
+        $crate::network::network!(@build
+            $orig_in,
+            $out,                                  // New current size
+            ($($buf_types,)* [f32; $out],),        // Append output buffer type
+            ($($buf_init,)* [0.0; $out],),         // Append buffer initialization
+            ($($layers,)* $crate::network::DenseLayer<$current_size, $out>,), // Add layer
+            $layer_idx + 1,                        // Increment layer index
+            $buf_idx,                              // Previous buffer index
+            $buf_idx + 1,                          // Next buffer index
+            {
+                $($fwd_stmts)*
+                self.layers.$layer_idx.forward(&self.buffers.$prev_buf_idx, &mut self.buffers.$buf_idx);
+            },                                     // Forward statement
+            { $($train_bufs)* },                   // Training buffers (placeholder)
             $($rest)*
-        );
+        )
     };
 
-    (@accumulate ( $($types:ty,)* ), $cur_in:expr, relu -> $($rest:tt)* ) => {
-        $crate::__network!(@accumulate
-            ( $($types,)* $crate::network::ReLU, ),
-            $cur_in,
+    // ReLU activation handler
+    (@build
+        $orig_in:expr, $size:expr, ($($buf_types:ty,)*), ($($buf_init:expr,)*), ($($layers:ty,)*), $layer_idx:expr,
+        $prev_buf_idx:expr, $buf_idx:expr,
+        {$($fwd_stmts:tt)*}, {$($train_bufs:tt)*},
+        relu -> $($rest:tt)*
+    ) => {
+        $crate::network::network!(@build
+            $orig_in,
+            $size,                                 // Size unchanged
+            ($($buf_types,)* [f32; $size],),       // Append output buffer type
+            ($($buf_init,)* [0.0; $size],),        // Append buffer initialization
+            ($($layers,)* $crate::network::ReLU,), // Add ReLU layer
+            $layer_idx + 1,
+            $buf_idx,
+            $buf_idx + 1,
+            {
+                $($fwd_stmts)*
+                self.layers.$layer_idx.forward(&self.buffers.$prev_buf_idx, &mut self.buffers.$buf_idx);
+            },
+            { $($train_bufs)* },
             $($rest)*
-        );
+        )
     };
 
-    (@accumulate ( $($types:ty,)* ), $cur_in:expr, sigmoid -> $($rest:tt)* ) => {
-        $crate::__network!(@accumulate
-            ( $($types,)* Sigmoid, ),
-            $cur_in,
+    // Sigmoid activation handler
+    (@build
+        $orig_in:expr, $size:expr, ($($buf_types:ty,)*), ($($buf_init:expr,)*), ($($layers:ty,)*), $layer_idx:expr,
+        $prev_buf_idx:expr, $buf_idx:expr,
+        {$($fwd_stmts:tt)*}, {$($train_bufs:tt)*},
+        sigmoid -> $($rest:tt)*
+    ) => {
+        $crate::network::network!(@build
+            $orig_in,
+            $size,                                 // Size unchanged
+            ($($buf_types,)* [f32; $size],),       // Append output buffer type
+            ($($buf_init,)* [0.0; $size],),        // Append buffer initialization
+            ($($layers,)* $crate::network::Sigmoid,), // Add Sigmoid layer
+            $layer_idx + 1,
+            $buf_idx,
+            $buf_idx + 1,
+            {
+                $($fwd_stmts)*
+                self.layers.$layer_idx.forward(&self.buffers.$prev_buf_idx, &mut self.buffers.$buf_idx);
+            },
+            { $($train_bufs)* },
             $($rest)*
-        );
+        )
     };
+
+    // Output terminator
+    (@build
+        $orig_in:expr, $out_size:expr, ($($buf_types:ty,)*), ($($buf_init:expr,)*), ($($layers:ty,)*), $layer_idx:expr,
+        $prev_buf_idx:expr, $buf_idx:expr,
+        {$($fwd_stmts:tt)*}, {$($train_bufs:tt)*},
+        output
+    ) => {{
+        struct Network {
+            layers: ($($layers,)*),    // Tuple of layers
+            buffers: ($($buf_types,)*), // Tuple of buffers
+        }
+
+        impl Network {
+            pub fn new() -> Self {
+                Network {
+                    layers: ($(<$layers as $crate::network::LayerInit>::init(),)*),
+                    buffers: ($($buf_init,)*), // Initialize buffers with zeros
+                }
+            }
+        }
+
+        // Implement NetworkTrait
+        impl $crate::network::NetworkTrait<$orig_in, $out_size> for Network {
+            fn forward(&mut self, input: &[f32; $orig_in]) -> [f32; $out_size] {
+                self.buffers.0 = *input; // Copy input to first buffer
+                $($fwd_stmts)*           // Execute forward statements
+                self.buffers.$prev_buf_idx.clone() // Return last buffer (cloned)
+            }
+
+            fn train(&mut self, _data: &[[f32; $orig_in]], _targets: &[[f32; $out_size]]) {
+                // Placeholder for training logic
+                // Backpropagation would use self.buffers similarly
+            }
+        }
+
+        Network::new()
+    }};
 }
 
 pub use __network as network;
