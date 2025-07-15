@@ -1,0 +1,20 @@
+[package]
+name = "nn"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+unstable = []
+
+[dependencies]
+rand = "0.9.1"
+nn-macros = { path = "../nn-macros" }
+
+[[example]]
+name = "linear-regression"
+path = "./examples/linear_regression.rs"
+required-features = ["unstable"]
+
+[[example]]
+name = "quadratic-regression"
+path = "./examples/quadratic_regression.rs"
