@@ -3,7 +3,7 @@
 
 // use nn::activation::{ReLU, Sigmoid};
 use nn::{
-    network as nt,
+    network,
     // layer::{dense, dim},
     // network::{ModelBuilder},
 };
@@ -15,11 +15,11 @@ fn main() {
     //     .hidden(dense!(64).activation(Sigmoid))
     //     .output(dim!(1));
 
-    let nt = nt! {
+    let net = network! {
         input(784) -> dense(128) -> relu -> dense(64) -> sigmoid -> dense(10) -> output
     };
 
-    println!("{}", type_of(&nt));
+    println!("{}", type_of(&net));
 
     // TODO: expected API
 

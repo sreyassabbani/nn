@@ -1,32 +1,39 @@
 // Define the DenseLayer struct with weights and biases
 #[derive(Debug)]
 pub struct DenseLayer<const IN: usize, const OUT: usize> {
-    weights: [[f32; IN]; OUT],
-    biases: [f32; OUT],
+    weights: Box<[[f32; IN]; OUT]>,
+    biases: Box<[f32; OUT]>,
 }
 
 // Rectified Linear Unit
 #[derive(Debug)]
-pub struct ReLU;
+pub struct ReLU<const N: usize>;
 
 // Sigmoid
 #[derive(Debug)]
-pub struct Sigmoid;
+pub struct Sigmoid<const N: usize>;
 
 // Forward pass implementation for ReLU
-impl ReLU {
-    pub fn forward<const N: usize>(&self, input: &[f32; N], output: &mut [f32; N]) {
+impl<const N: usize> ReLU<N> {
+    pub fn forward(&self, input: &[f32], output: &mut [f32])
+    // where
+    //     I: AsRef<[f32; N]>,
+    {
         for i in 0..N {
-            output[i] = input[i].max(0.0);
+            output[i] = input.as_ref()[i].max(0.0);
         }
     }
 }
 
 // Forward pass implementation for Sigmoid
-impl Sigmoid {
-    pub fn forward<const N: usize>(&self, input: &[f32; N], output: &mut [f32; N]) {
+impl<const N: usize> Sigmoid<N> {
+    /// You can pass a reference to owned values in &Box<>
+    pub fn forward(&self, input: &[f32], output: &mut [f32])
+    // where
+    //     I: AsRef<[f32; N]>,
+    {
         for i in 0..N {
-            output[i] = 1.0 / (1.0 + (-input[i]).exp());
+            output[i] = 1.0 / (1.0 + (-input.as_ref()[i]).exp());
         }
     }
 }
@@ -40,21 +47,21 @@ pub trait LayerInit {
 impl<const IN: usize, const OUT: usize> LayerInit for DenseLayer<IN, OUT> {
     fn init() -> Self {
         Self {
-            weights: [[0.0; IN]; OUT],
-            biases: [0.0; OUT],
+            weights: Box::new([[0.0; IN]; OUT]),
+            biases: Box::new([0.0; OUT]),
         }
     }
 }
 
 // Initialize ReLU
-impl LayerInit for ReLU {
+impl<const N: usize> LayerInit for ReLU<N> {
     fn init() -> Self {
         ReLU
     }
 }
 
 // Initialize Sigmoid
-impl LayerInit for Sigmoid {
+impl<const N: usize> LayerInit for Sigmoid<N> {
     fn init() -> Self {
         Sigmoid
     }
@@ -62,17 +69,18 @@ impl LayerInit for Sigmoid {
 
 // Trait for network functionality
 pub trait NetworkTrait<const IN: usize, const OUT: usize> {
-    fn forward(&mut self, input: &[f32; IN]) -> [f32; OUT];
-    fn train(&mut self, data: &[[f32; IN]], targets: &[[f32; OUT]]);
+    fn forward(&mut self, input: &[f32]) -> [f32; OUT];
+    fn train<D: AsRef<[[f32; IN]]>, T: AsRef<[[f32; OUT]]>>(&mut self, data: D, targets: T);
 }
 
 // Forward pass for DenseLayer (basic implementation)
 impl<const IN: usize, const OUT: usize> DenseLayer<IN, OUT> {
-    pub fn forward(&self, input: &[f32; IN], output: &mut [f32; OUT]) {
+    // used to be forward<I: AsRef<[f32; IN]>>(... input: I, ...)
+    pub fn forward(&self, input: &[f32], output: &mut [f32]) {
         for o in 0..OUT {
             let mut sum = self.biases[o];
             for i in 0..IN {
-                sum += self.weights[o][i] * input[i];
+                sum += self.weights[o][i] * input.as_ref()[i];
             }
             output[o] = sum;
         }

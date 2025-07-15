@@ -20,9 +20,8 @@ mod parsing {
     }
 
     impl Parse for NetworkDef {
-        fn parse(input: ParseStream) -> ::syn::Result<Self> {
-            // Parse: input(10) -> dense(20) -> relu -> dense(1) -> sigmoid -> output
-            input.parse::<Ident>()?; // "input"
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            input.parse::<Ident>()?;
 
             let content;
             ::syn::parenthesized!(content in input);
@@ -85,45 +84,56 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
     let input_size = def.input_size;
     let layer_count = def.layers.len();
 
-    // Calculate output size by following the layers
+    // Calculate maximum buffer size needed
     let mut current_size = input_size;
-    let mut layer_types = Vec::new();
-    let mut buffer_types = vec![quote! { [f32; #input_size] }];
-    let mut buffer_inits = vec![quote! { [0.0; #input_size] }];
-
-    for layer in &def.layers {
-        match layer {
-            Layer::Dense(out_size) => {
-                layer_types.push(quote! { ::nn::network::DenseLayer<#current_size, #out_size> });
-                buffer_types.push(quote! { [f32; #out_size] });
-                buffer_inits.push(quote! { [0.0; #out_size] });
-                current_size = *out_size;
-            }
-            Layer::ReLU => {
-                layer_types.push(quote! { ::nn::network::ReLU });
-                buffer_types.push(quote! { [f32; #current_size] });
-                buffer_inits.push(quote! { [0.0; #current_size] });
-            }
-            Layer::Sigmoid => {
-                layer_types.push(quote! { ::nn::network::Sigmoid });
-                buffer_types.push(quote! { [f32; #current_size] });
-                buffer_inits.push(quote! { [0.0; #current_size] });
-            }
-        }
-    }
+    let mut max_size = input_size;
+    let layer_types: Vec<_> = def
+        .layers
+        .into_iter()
+        .map(|layer| {
+            return match layer {
+                Layer::Dense(out_size) => {
+                    let l = quote! { ::nn::network::DenseLayer<#current_size, #out_size> };
+                    current_size = out_size;
+                    max_size = max_size.max(out_size);
+                    return l;
+                }
+                // Working data buffer's size stays the same for activation functions
+                Layer::ReLU => quote! { ::nn::network::ReLU<#current_size> },
+                Layer::Sigmoid => quote! { ::nn::network::Sigmoid<#current_size> },
+            };
+        })
+        .collect();
 
     let output_size = current_size;
 
-    // Generate forward pass calls
+    // Generate forward pass with buffer reuse
     let mut forward_calls = Vec::new();
+    let mut use_buf_a = true;
+
     for i in 0..layer_count {
         let layer_idx = ::syn::Index::from(i);
-        let buf_in_idx = ::syn::Index::from(i);
-        let buf_out_idx = ::syn::Index::from(i + 1);
+        let (input_buf, output_buf) = if use_buf_a {
+            (quote! { &self.buf_a }, quote! { &mut self.buf_b })
+        } else {
+            (quote! { &self.buf_b }, quote! { &mut self.buf_a })
+        };
+
+        // forward_calls.push(quote! {
+        //     self.layers.#layer_idx.forward(
+        //         <&[f32; #current_size]>::try_into(#input_buf[..#current_size]).unwrap(),
+        //         <&mut [f32; #current_size]>::try_into(&mut #output_buf[..#current_size]).unwrap(),
+        //     );
+        // });
 
         forward_calls.push(quote! {
-            self.layers.#layer_idx.forward(&self.buffers.#buf_in_idx, &mut self.buffers.#buf_out_idx);
+            self.layers.#layer_idx.forward(
+                #input_buf[..#current_size],
+                #output_buf[..#current_size],
+            );
         });
+
+        use_buf_a = !use_buf_a;
     }
 
     // Generate layer initializations
@@ -131,41 +141,51 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
         quote! { <#layer_type as ::nn::network::LayerInit>::init() }
     });
 
-    let final_buffer_idx = ::syn::Index::from(layer_count);
+    let final_buffer = if (layer_count % 2) == 1 {
+        quote! { self.buf_b }
+    } else {
+        quote! { self.buf_a }
+    };
 
     quote! {
         {
             #[derive(Debug)]
             struct Network<Layers> {
-                layers: (#(#layer_types,)*),
-                buffers: (#(#buffer_types,)*),
-                _phantom: ::std::marker::PhantomData<Layers>
+                layers: Layers,
+                // Double buffering approach with fixed-size boxes
+                buf_a: Box<[f32; #max_size]>,
+                buf_b: Box<[f32; #max_size]>,
             }
 
             impl Network<(#(#layer_types,)*)> {
                 pub fn new() -> Self {
                     Network {
                         layers: (#(#layer_inits,)*),
-                        buffers: (#(#buffer_inits,)*),
-                        _phantom: ::std::marker::PhantomData
+                        buf_a: Box::new([0.0; #max_size]),
+                        buf_b: Box::new([0.0; #max_size]),
                     }
                 }
             }
 
-            impl<Layers> ::nn::network::NetworkTrait<#input_size, #output_size> for Network<Layers> {
-                fn forward(&mut self, input: &[f32; #input_size]) -> [f32; #output_size] {
+            impl ::nn::network::NetworkTrait<#input_size, #output_size> for Network<(#(#layer_types,)*)> {
+                // used to be forward<I: AsRef<[f32; #input_size]>>(... input: I)
+                fn forward(&mut self, input: &[f32]) -> [f32; #output_size]
+                {
                     // Copy input to first buffer
-                    self.buffers.0 = *input;
+                    self.buf_a[..#input_size].copy_from_slice(input);
 
-                    // Run forward pass
-                    #(#forward_calls)*
+                    // Run forward pass with ping-pong buffers
+                    #(#forward_calls)*;
 
-                    // Return final buffer
-                    self.buffers.#final_buffer_idx
+                    // Extract result from final buffer
+                    let mut result = [0.0; #output_size];
+                    result.copy_from_slice(&(#final_buffer)[..#output_size]);
+                    result
                 }
 
-                fn train(&mut self, _data: &[[f32; #input_size]], _targets: &[[f32; #output_size]]) {
-                    // Placeholder for training logic
+                fn train<D: AsRef<[[f32; #input_size]]>, T: AsRef<[[f32; #output_size]]>>(&mut self, _data: D, _targets: T) {
+
+                    // Training implementation
                 }
             }
 
