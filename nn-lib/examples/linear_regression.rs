@@ -6,7 +6,6 @@ use nn::{
     network as nt,
     // layer::{dense, dim},
     // network::{ModelBuilder},
-    network::{DenseLayer, LayerInit, NetworkTrait, ReLU},
 };
 
 fn main() {
@@ -17,8 +16,10 @@ fn main() {
     //     .output(dim!(1));
 
     let nt = nt! {
-        input(784) -> dense(128) -> relu -> dense(64)-> relu -> dense(64)-> relu -> dense(64)-> relu -> dense(64) -> output
+        input(784) -> dense(128) -> relu -> dense(64) -> sigmoid -> dense(10) -> output
     };
+
+    println!("{}", type_of(&nt));
 
     // TODO: expected API
 
