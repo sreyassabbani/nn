@@ -1,23 +1,14 @@
 #![allow(unused)]
 #![feature(generic_arg_infer)]
 
-// use nn::activation::{ReLU, Sigmoid};
-use nn::{
-    network as nt,
-    // layer::{dense, dim},
-    // network::{ModelBuilder},
-};
+use nn::network as nt;
 
 fn main() {
-    // let network = ModelBuilder::new()
-    //     .input(dim!(128))
-    //     .hidden(dense!(64).activation(ReLU))
-    //     .hidden(dense!(64).activation(Sigmoid))
-    //     .output(dim!(1));
-
-    let nt = nt! {
+    let mut nt = nt! {
         input(784) -> dense(128) -> relu -> dense(64) -> sigmoid -> dense(10) -> output
     };
+
+    nt.forward(&[0.0; 784]);
 
     println!("{}", type_of(&nt));
 

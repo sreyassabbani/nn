@@ -87,30 +87,31 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
 
     // Calculate output size by following the layers
     let mut current_size = input_size;
-    let mut layer_types = Vec::new();
     let mut buffer_types = vec![quote! { [f32; #input_size] }];
     let mut buffer_inits = vec![quote! { [0.0; #input_size] }];
 
-    for layer in &def.layers {
-        match layer {
+    let layer_types: Vec<_> = def
+        .layers
+        .iter()
+        .map(|layer| match layer {
             Layer::Dense(out_size) => {
-                layer_types.push(quote! { ::nn::network::DenseLayer<#current_size, #out_size> });
                 buffer_types.push(quote! { [f32; #out_size] });
                 buffer_inits.push(quote! { [0.0; #out_size] });
                 current_size = *out_size;
+                quote! { ::nn::network::DenseLayer<#current_size, #out_size> }
             }
             Layer::ReLU => {
-                layer_types.push(quote! { ::nn::network::ReLU });
                 buffer_types.push(quote! { [f32; #current_size] });
                 buffer_inits.push(quote! { [0.0; #current_size] });
+                quote! { ::nn::network::ReLU }
             }
             Layer::Sigmoid => {
-                layer_types.push(quote! { ::nn::network::Sigmoid });
                 buffer_types.push(quote! { [f32; #current_size] });
                 buffer_inits.push(quote! { [0.0; #current_size] });
+                quote! { ::nn::network::Sigmoid }
             }
-        }
-    }
+        })
+        .collect();
 
     let output_size = current_size;
 
@@ -150,10 +151,8 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
                         _phantom: ::std::marker::PhantomData
                     }
                 }
-            }
 
-            impl<Layers> ::nn::network::NetworkTrait<#input_size, #output_size> for Network<Layers> {
-                fn forward(&mut self, input: &[f32; #input_size]) -> [f32; #output_size] {
+                pub fn forward_with_workspace(&self, input: &[f32; #input_size]) -> [f32; #output_size] {
                     // Copy input to first buffer
                     self.buffers.0 = *input;
 
@@ -164,8 +163,28 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
                     self.buffers.#final_buffer_idx
                 }
 
-                fn train(&mut self, _data: &[[f32; #input_size]], _targets: &[[f32; #output_size]]) {
-                    // Placeholder for training logic
+                pub fn forward(&self, input: &[f32; #input_size]) -> [f32; #output_size] {
+                    // Copy input to first buffer
+                    self.buffers.0 = *input;
+
+                    // Run forward pass
+                    #(#forward_calls)*
+
+                    // Return final buffer
+                    self.buffers.#final_buffer_idx
+                }
+
+                pub fn train(&mut self, data: &[[f32; #input_size]], targets: &[[f32; #output_size]]) {
+                    // Loop over each case
+                    for (input, target) in data.iter().zip(targets.iter()) {
+                        let out = self.forward(input);
+                        let loss: f32 = out.iter().zip(target.iter()).map(|(o, t)| (o - t).powi(2)).sum();
+                        // sum (y hat - y)^2
+
+                        // for layer in self.layers.iter() {
+
+                        // }
+                    }
                 }
             }
 

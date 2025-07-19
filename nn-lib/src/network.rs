@@ -60,12 +60,6 @@ impl LayerInit for Sigmoid {
     }
 }
 
-// Trait for network functionality
-pub trait NetworkTrait<const IN: usize, const OUT: usize> {
-    fn forward(&mut self, input: &[f32; IN]) -> [f32; OUT];
-    fn train(&mut self, data: &[[f32; IN]], targets: &[[f32; OUT]]);
-}
-
 // Forward pass for DenseLayer (basic implementation)
 impl<const IN: usize, const OUT: usize> DenseLayer<IN, OUT> {
     pub fn forward(&self, input: &[f32; IN], output: &mut [f32; OUT]) {
