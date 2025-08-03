@@ -14,12 +14,13 @@ fn main() {
     println!("{}", type_of(&nt));
 
     // Example with a computation graph
-    let mut nt = graph! {
+    let mut graph = graph! {
         input -> pow(2) -> cos -> scale((1.0 / 3.0)) -> output
     };
 
-    let f_of_2 = nt.compute(2.0);
+    let (f_of_2, f_p_of_2) = graph.compute(2.0);
     println!("{f_of_2}");
+    println!("{f_p_of_2}");
 
     // TODO: expected API
 

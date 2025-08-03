@@ -24,11 +24,19 @@ impl Op {
             Op::Pow(exp) => input.powi(*exp),
         }
     }
+    fn compute_derivative(&self, input: f64) -> f64 {
+        match self {
+            &Op::Scale(factor) => factor,
+            &Op::Sin => input.cos(),
+            &Op::Cos => -input.sin(),
+            &Op::Pow(exp) => input.powi(exp),
+        }
+    }
 }
 
 impl CompGraph {
     pub fn new(ops: Vec<Op>) -> Self {
-        let cap = ops.len();
+        let cap = ops.len() + 1;
         Self {
             ops,
             _buf_primals: Vec::with_capacity(cap),
@@ -36,10 +44,22 @@ impl CompGraph {
         }
     }
 
-    pub fn compute(&self, input: f64) -> f64 {
-        self.ops.iter().fold(input, |acc, x| {
-            return x.compute(acc);
-        })
+    pub fn compute(&mut self, input: f64) -> (f64, f64) {
+        self._buf_primals.clear();
+        self._buf_tangents.clear();
+
+        self._buf_primals.push(input);
+        self.ops
+            .iter()
+            .enumerate()
+            .fold((input, 1.0), |(primal_acc, tangent_chain), (i, x)| {
+                let primal = x.compute(primal_acc);
+                let tangent = tangent_chain * x.compute_derivative(primal_acc);
+                // actually inserting at position i+1 due to input
+                self._buf_primals.push(primal);
+                self._buf_tangents.push(tangent);
+                return (primal, tangent);
+            })
     }
 }
 
