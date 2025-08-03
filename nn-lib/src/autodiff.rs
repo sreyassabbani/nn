@@ -51,8 +51,7 @@ impl CompGraph {
         self._buf_primals.push(input);
         self.ops
             .iter()
-            .enumerate()
-            .fold((input, 1.0), |(primal_acc, tangent_chain), (i, x)| {
+            .fold((input, 1.0), |(primal_acc, tangent_chain), x| {
                 let primal = x.compute(primal_acc);
                 let tangent = tangent_chain * x.compute_derivative(primal_acc);
                 // actually inserting at position i+1 due to input

@@ -15,7 +15,7 @@ fn main() {
 
     // Example with a computation graph
     let mut graph = graph! {
-        input -> pow(2) -> cos -> scale((1.0 / 3.0)) -> output
+        input -> pow(2) -> cos -> scale((1.0 / 3.0)) -> scale((1.0 / 3.0)) -> scale(3.0) -> output
     };
 
     let (f_of_2, f_p_of_2) = graph.compute(2.0);
