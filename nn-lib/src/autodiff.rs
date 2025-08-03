@@ -1,4 +1,5 @@
 /// This is our computation graph
+#[derive(Clone, Debug)]
 pub struct CompGraph {
     ops: Vec<Op>,
     /// Intermediate calculations in finding composite f
@@ -8,6 +9,7 @@ pub struct CompGraph {
 }
 
 /// Very rudimentary operations that can be combined via the chain rule to make a more complex function
+#[derive(Copy, Clone, Debug)]
 pub enum Op {
     Scale(f64),
     Sin,
@@ -16,20 +18,20 @@ pub enum Op {
 }
 
 impl Op {
-    fn compute(&self, input: f64) -> f64 {
+    fn compute(self, input: f64) -> f64 {
         match self {
             Op::Scale(factor) => input * factor,
             Op::Sin => input.sin(),
             Op::Cos => input.cos(),
-            Op::Pow(exp) => input.powi(*exp),
+            Op::Pow(exp) => input.powi(exp),
         }
     }
-    fn compute_derivative(&self, input: f64) -> f64 {
+    fn compute_derivative(self, input: f64) -> f64 {
         match self {
-            &Op::Scale(factor) => factor,
-            &Op::Sin => input.cos(),
-            &Op::Cos => -input.sin(),
-            &Op::Pow(exp) => input.powi(exp),
+            Op::Scale(factor) => factor,
+            Op::Sin => input.cos(),
+            Op::Cos => -input.sin(),
+            Op::Pow(exp) => exp as f64 * input.powi(exp - 1),
         }
     }
 }
@@ -54,9 +56,11 @@ impl CompGraph {
             .fold((input, 1.0), |(primal_acc, tangent_chain), x| {
                 let primal = x.compute(primal_acc);
                 let tangent = tangent_chain * x.compute_derivative(primal_acc);
+
                 // actually inserting at position i+1 due to input
                 self._buf_primals.push(primal);
                 self._buf_tangents.push(tangent);
+
                 return (primal, tangent);
             })
     }
@@ -66,54 +70,48 @@ impl CompGraph {
 macro_rules! graph {
     (input -> $($rest:tt)*) => {
         {
-            let mut _v = Vec::new();
-
             use $crate::autodiff::{Op, CompGraph};
             $crate::graph! {
                 @build
-                _v,
+                [],
                 $($rest)*
             }
         }
     };
 
-    (@build $ops:ident, sin -> $($rest:tt)*) => {
-        $ops.push(Op::Sin);
+    (@build [$($ops:expr,)*], sin -> $($rest:tt)*) => {
         $crate::graph! {
             @build
-            $ops,
+            [$($ops,)* Op::Sin,],
             $($rest)*
         }
     };
 
-    (@build $ops:ident, cos -> $($rest:tt)*) => {
-        $ops.push(Op::Cos);
+    (@build [$($ops:expr,)*], cos -> $($rest:tt)*) => {
         $crate::graph! {
             @build
-            $ops,
+            [$($ops,)* Op::Cos,],
             $($rest)*
         }
     };
 
-    (@build $ops:ident, scale($x:expr) -> $($rest:tt)*) => {
-        $ops.push(Op::Scale($x));
+    (@build [$($ops:expr,)*], scale($x:expr) -> $($rest:tt)*) => {
         $crate::graph! {
             @build
-            $ops,
+            [$($ops,)* Op::Scale($x),],
             $($rest)*
         }
     };
 
-    (@build $ops:ident, pow($n:literal) -> $($rest:tt)*) => {
-        $ops.push(Op::Pow($n));
+    (@build [$($ops:expr,)*], pow($n:literal) -> $($rest:tt)*) => {
         $crate::graph! {
             @build
-            $ops,
+            [$($ops,)* Op::Pow($n),],
             $($rest)*
         }
     };
 
-    (@build $ops:expr, output) => {
-        CompGraph::new($ops)
+    (@build [$($ops:expr,)*], output) => {
+        CompGraph::new(Vec::from([$($ops,)*]))
     };
 }
