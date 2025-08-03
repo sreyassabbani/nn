@@ -1,6 +1,7 @@
 #![allow(unused)]
 #![feature(generic_arg_infer)]
 
+use nn::graph;
 use nn::network as nt;
 
 fn main() {
@@ -11,6 +12,14 @@ fn main() {
     nt.forward(&[0.0; 784]);
 
     println!("{}", type_of(&nt));
+
+    // Example with a computation graph
+    let mut nt = graph! {
+        input -> pow(2) -> cos -> scale((1.0 / 3.0)) -> output
+    };
+
+    let f_of_2 = nt.compute(2.0);
+    println!("{f_of_2}");
 
     // TODO: expected API
 
