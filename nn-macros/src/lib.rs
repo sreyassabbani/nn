@@ -138,7 +138,7 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
 
     // Generate layer initializations
     let layer_inits = layer_types.iter().map(|layer_type| {
-        quote! { <#layer_type as ::nn::network::LayerInit>::init() }
+        quote! { <#layer_type>::init() }
     });
 
     let final_buffer = if (layer_count % 2) == 1 {

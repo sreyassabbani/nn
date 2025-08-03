@@ -15,6 +15,10 @@ pub struct Sigmoid<const N: usize>;
 
 // Forward pass implementation for ReLU
 impl<const N: usize> ReLU<N> {
+    pub fn init() -> Self {
+        ReLU
+    }
+
     pub fn forward(&self, input: &[f32], output: &mut [f32])
     // where
     //     I: AsRef<[f32; N]>,
@@ -27,6 +31,10 @@ impl<const N: usize> ReLU<N> {
 
 // Forward pass implementation for Sigmoid
 impl<const N: usize> Sigmoid<N> {
+    pub fn init() -> Self {
+        Sigmoid
+    }
+
     /// You can pass a reference to owned values in &Box<>
     pub fn forward(&self, input: &[f32], output: &mut [f32])
     // where
@@ -38,37 +46,17 @@ impl<const N: usize> Sigmoid<N> {
     }
 }
 
-// Trait for initializing layers
-pub trait LayerInit {
-    fn init() -> Self;
-}
-
 // Initialize DenseLayer (simplified; real init would use proper randomization)
-impl<const IN: usize, const OUT: usize> LayerInit for DenseLayer<IN, OUT> {
-    fn init() -> Self {
+impl<const IN: usize, const OUT: usize> DenseLayer<IN, OUT> {
+    pub fn init() -> Self {
         Self {
             weights: Box::new([[0.0; IN]; OUT]),
             biases: Box::new([0.0; OUT]),
         }
     }
-}
 
-// Initialize ReLU
-impl<const N: usize> LayerInit for ReLU<N> {
-    fn init() -> Self {
-        ReLU
-    }
-}
-
-// Initialize Sigmoid
-impl<const N: usize> LayerInit for Sigmoid<N> {
-    fn init() -> Self {
-        Sigmoid
-    }
-}
-
-// Forward pass for DenseLayer (basic implementation)
-impl<const IN: usize, const OUT: usize> DenseLayer<IN, OUT> {
+    // Forward pass for DenseLayer (basic implementation)
+    //
     // used to be forward<I: AsRef<[f32; IN]>>(... input: I, ...)
     pub fn forward(&self, input: &[f32], output: &mut [f32]) {
         for o in 0..OUT {
