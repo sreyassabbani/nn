@@ -114,9 +114,9 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
     for i in 0..layer_count {
         let layer_idx = ::syn::Index::from(i);
         let (input_buf, output_buf) = if use_buf_a {
-            (quote! { &self.buf_a }, quote! { &mut self.buf_b })
+            (quote! { &self._buf_a }, quote! { &mut self._buf_b })
         } else {
-            (quote! { &self.buf_b }, quote! { &mut self.buf_a })
+            (quote! { &self._buf_b }, quote! { &mut self._buf_a })
         };
 
         // forward_calls.push(quote! {
@@ -142,9 +142,9 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
     });
 
     let final_buffer = if (layer_count % 2) == 1 {
-        quote! { self.buf_b }
+        quote! { self._buf_b }
     } else {
-        quote! { self.buf_a }
+        quote! { self._buf_a }
     };
 
     quote! {
@@ -153,8 +153,8 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
             struct Network<Layers> {
                 layers: Layers,
                 // Double buffering approach with fixed-size boxes
-                buf_a: Box<[f32; #max_size]>,
-                buf_b: Box<[f32; #max_size]>,
+                _buf_a: Box<[f32; #max_size]>,
+                _buf_b: Box<[f32; #max_size]>,
             }
 
             struct NetworkWorkspace {
@@ -165,8 +165,8 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
                 pub fn new() -> Self {
                     Network {
                         layers: (#(#layer_inits,)*),
-                        buf_a: Box::new([0.0; #max_size]),
-                        buf_b: Box::new([0.0; #max_size]),
+                        _buf_a: Box::new([Default::default(); #max_size]),
+                        _buf_b: Box::new([Default::default(); #max_size]),
                     }
                 }
 
@@ -174,7 +174,7 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
                     // used to be forward<I: AsRef<[f32; #input_size]>>(... input: I)
 
                     // Copy input to first buffer
-                    // self.buf_a[..#input_size].copy_from_slice(input);
+                    // self._buf_a[..#input_size].copy_from_slice(input);
 
                     // Run forward pass with ping-pong buffers
                     // #(#forward_calls)*;
@@ -201,7 +201,8 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
                     // Loop over each case
                     let targets = targets.as_ref().iter();
                     let data = data.as_ref().iter();
-                    for (input, target) in data.as_ref().iter().zip(targets) {
+
+                    for (input, target) in data.zip(targets) {
                         let out = self.forward(input);
                         let loss: f32 = out.iter().zip(target.iter()).map(|(o, t)| (o - t).powi(2)).sum();
                         // sum (y hat - y)^2

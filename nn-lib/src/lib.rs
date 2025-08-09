@@ -3,3 +3,5 @@
 
 pub use nn_macros::network;
 pub mod network;
+
+pub mod autodiff;
