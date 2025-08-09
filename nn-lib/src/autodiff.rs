@@ -346,6 +346,11 @@ macro_rules! graph {
         $crate::graph! { @build_multi $graph, $($rest)* }
     };
 
+    (@build_multi $graph:ident, $node:ident -> $op:ident ( $($op_args:tt)* ) -> @ $result:ident $($rest:tt)*) => {
+        let $result = $graph.operation(Op::$op($($op_args)*), vec![$node]);
+        $crate::graph! { @build_multi $graph, $($rest)* }
+    };
+
     // Generic N-ary op without extra args: (@a, @b, @c) -> add -> @result
     (@build_multi $graph:ident, ( $( @ $node:ident ),+ ) -> $op:ident -> @ $result:ident $($rest:tt)*) => {
         let $result = $graph.operation(Op::$op, vec![$($node),+]);
