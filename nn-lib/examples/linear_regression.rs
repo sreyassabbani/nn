@@ -24,6 +24,31 @@ fn main() {
 
     // TODO: expected API
 
+    // Multi-input autodiff example
+    let mut multi = graph! {
+        inputs: [x, y]
+        x -> pow(2) -> @x_sq
+        y -> sin -> @y_sin
+        (@x_sq, @y_sin) -> add -> @result
+        output @result
+    };
+
+    let (value, grad) = multi.compute(&[2.0, std::f64::consts::PI / 2.0]);
+    println!("multi value: {}", value);
+    println!("multi grad: {:?}", grad);
+
+    // Mixed chaining example
+    let mut mixed = graph! {
+        inputs: [x, y]
+        x -> pow(2) -> sin -> @temp1
+        y -> cos -> scale(2.0) -> @temp2
+        (@temp1, @temp2) -> mul -> output
+    };
+
+    let (mval, mgrad) = mixed.compute(&[1.0, 0.0]);
+    println!("mixed value: {}", mval);
+    println!("mixed grad: {:?}", mgrad);
+
     // train
     // let train_data = [(1.0, 2.0), (3.0, 2.0)].map(DataSample::from);
     // let eta = 0.3; // learning rate
