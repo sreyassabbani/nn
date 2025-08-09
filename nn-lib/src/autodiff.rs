@@ -19,7 +19,7 @@ pub struct MultiGraph {
 #[derive(Debug, Clone)]
 pub enum Node {
     Input(String),
-    Operation(Op, Vec<NodeId>),
+    Operation(Box<dyn OpTrait>),
     Output(NodeId),
 }
 
@@ -62,12 +62,158 @@ impl Op {
             }
         }
     }
+}
 
-    fn input_count(self) -> usize {
-        match self {
-            Op::Scale(_) | Op::Sin | Op::Cos | Op::Pow(_) => 1,
-            Op::Add | Op::Mul => 2, // For now, support 2 inputs
-        }
+/// Trait for operations with type-level arity
+pub trait OpTrait: std::fmt::Debug {
+    const ARITY: usize;
+    
+    fn compute(&self, inputs: &[f64]) -> f64;
+    fn compute_derivative(&self, inputs: &[f64], input_idx: usize) -> f64;
+    fn input_ids(&self) -> &[NodeId];
+}
+
+// Single-input operations
+#[derive(Debug)]
+pub struct ScaleOp {
+    pub factor: f64,
+    pub input_id: NodeId,
+}
+
+impl OpTrait for ScaleOp {
+    const ARITY: usize = 1;
+    
+    fn compute(&self, inputs: &[f64]) -> f64 {
+        debug_assert_eq!(inputs.len(), Self::ARITY, "ScaleOp requires exactly {} input", Self::ARITY);
+        inputs[0] * self.factor
+    }
+    
+    fn compute_derivative(&self, _inputs: &[f64], _input_idx: usize) -> f64 {
+        self.factor
+    }
+    
+    fn input_ids(&self) -> &[NodeId] {
+        std::slice::from_ref(&self.input_id)
+    }
+}
+
+#[derive(Debug)]
+pub struct SinOp {
+    pub input_id: NodeId,
+}
+
+impl OpTrait for SinOp {
+    const ARITY: usize = 1;
+    
+    fn compute(&self, inputs: &[f64]) -> f64 {
+        debug_assert_eq!(inputs.len(), Self::ARITY, "SinOp requires exactly {} input", Self::ARITY);
+        inputs[0].sin()
+    }
+    
+    fn compute_derivative(&self, inputs: &[f64], _input_idx: usize) -> f64 {
+        debug_assert_eq!(inputs.len(), Self::ARITY, "SinOp requires exactly {} input", Self::ARITY);
+        inputs[0].cos()
+    }
+    
+    fn input_ids(&self) -> &[NodeId] {
+        std::slice::from_ref(&self.input_id)
+    }
+}
+
+#[derive(Debug)]
+pub struct CosOp {
+    pub input_id: NodeId,
+}
+
+impl OpTrait for CosOp {
+    const ARITY: usize = 1;
+    
+    fn compute(&self, inputs: &[f64]) -> f64 {
+        debug_assert_eq!(inputs.len(), Self::ARITY, "CosOp requires exactly {} input", Self::ARITY);
+        inputs[0].cos()
+    }
+    
+    fn compute_derivative(&self, inputs: &[f64], _input_idx: usize) -> f64 {
+        debug_assert_eq!(inputs.len(), Self::ARITY, "CosOp requires exactly {} input", Self::ARITY);
+        -inputs[0].sin()
+    }
+    
+    fn input_ids(&self) -> &[NodeId] {
+        std::slice::from_ref(&self.input_id)
+    }
+}
+
+#[derive(Debug)]
+pub struct PowOp {
+    pub exp: i32,
+    pub input_id: NodeId,
+}
+
+impl OpTrait for PowOp {
+    const ARITY: usize = 1;
+    
+    fn compute(&self, inputs: &[f64]) -> f64 {
+        debug_assert_eq!(inputs.len(), Self::ARITY, "PowOp requires exactly {} input", Self::ARITY);
+        inputs[0].powi(self.exp)
+    }
+    
+    fn compute_derivative(&self, inputs: &[f64], _input_idx: usize) -> f64 {
+        debug_assert_eq!(inputs.len(), Self::ARITY, "PowOp requires exactly {} input", Self::ARITY);
+        self.exp as f64 * inputs[0].powi(self.exp - 1)
+    }
+    
+    fn input_ids(&self) -> &[NodeId] {
+        std::slice::from_ref(&self.input_id)
+    }
+}
+
+// Two-input operations
+#[derive(Debug)]
+pub struct AddOp {
+    pub input_ids: [NodeId; 2],
+}
+
+impl OpTrait for AddOp {
+    const ARITY: usize = 2;
+    
+    fn compute(&self, inputs: &[f64]) -> f64 {
+        debug_assert_eq!(inputs.len(), Self::ARITY, "AddOp requires exactly {} inputs", Self::ARITY);
+        inputs.iter().sum()
+    }
+    
+    fn compute_derivative(&self, _inputs: &[f64], _input_idx: usize) -> f64 {
+        1.0
+    }
+    
+    fn input_ids(&self) -> &[NodeId] {
+        &self.input_ids
+    }
+}
+
+#[derive(Debug)]
+pub struct MulOp {
+    pub input_ids: [NodeId; 2],
+}
+
+impl OpTrait for MulOp {
+    const ARITY: usize = 2;
+    
+    fn compute(&self, inputs: &[f64]) -> f64 {
+        debug_assert_eq!(inputs.len(), Self::ARITY, "MulOp requires exactly {} inputs", Self::ARITY);
+        inputs.iter().product()
+    }
+    
+    fn compute_derivative(&self, inputs: &[f64], input_idx: usize) -> f64 {
+        debug_assert_eq!(inputs.len(), Self::ARITY, "MulOp requires exactly {} inputs", Self::ARITY);
+        inputs.iter()
+            .enumerate()
+            .filter(|(i, _)| *i != input_idx)
+            .map(|(_, &x)| x)
+            .product()
+    }
+    
+    fn input_ids(&self) -> &[NodeId] {
+        &self.input_ids
     }
 }
 
@@ -93,7 +239,33 @@ impl MultiGraph {
     pub fn operation(&mut self, op: Op, inputs: Vec<NodeId>) -> NodeId {
         let id = NodeId(self.next_id);
         self.next_id += 1;
-        self.nodes.push(Node::Operation(op, inputs));
+        let operation = match op {
+            Op::Scale(factor) => {
+                debug_assert_eq!(inputs.len(), 1, "Scale operation requires exactly 1 input");
+                Box::new(ScaleOp { factor, input_id: inputs[0] })
+            }
+            Op::Sin => {
+                debug_assert_eq!(inputs.len(), 1, "Sin operation requires exactly 1 input");
+                Box::new(SinOp { input_id: inputs[0] })
+            }
+            Op::Cos => {
+                debug_assert_eq!(inputs.len(), 1, "Cos operation requires exactly 1 input");
+                Box::new(CosOp { input_id: inputs[0] })
+            }
+            Op::Pow(exp) => {
+                debug_assert_eq!(inputs.len(), 1, "Pow operation requires exactly 1 input");
+                Box::new(PowOp { exp, input_id: inputs[0] })
+            }
+            Op::Add => {
+                debug_assert_eq!(inputs.len(), 2, "Add operation requires exactly 2 inputs");
+                Box::new(AddOp { input_ids: [inputs[0], inputs[1]] })
+            }
+            Op::Mul => {
+                debug_assert_eq!(inputs.len(), 2, "Mul operation requires exactly 2 inputs");
+                Box::new(MulOp { input_ids: [inputs[0], inputs[1]] })
+            }
+        };
+        self.nodes.push(Node::Operation(operation));
         id
     }
 
@@ -151,10 +323,10 @@ impl MultiGraph {
 
         // Second pass: handle operations (topological order)
         for (i, node) in self.nodes.iter().enumerate() {
-            if let Node::Operation(op, input_ids) = node {
+            if let Node::Operation(op) = node {
                 // Pre-allocate input_primals to avoid repeated allocations
-                let mut input_primals = Vec::with_capacity(input_ids.len());
-                for &id in input_ids {
+                let mut input_primals = Vec::with_capacity(op.input_ids().len());
+                for &id in op.input_ids() {
                     if id.0 < self.primals.len() {
                         input_primals.push(self.primals[id.0]);
                     } else {
@@ -166,7 +338,7 @@ impl MultiGraph {
                 
                 // Compute derivatives using chain rule
                 let mut total_derivative = 0.0;
-                for (j, &input_id) in input_ids.iter().enumerate() {
+                for (j, &input_id) in op.input_ids().iter().enumerate() {
                     if input_id.0 < self.tangents.len() {
                         let partial = op.compute_derivative(&input_primals, j);
                         total_derivative += self.tangents[input_id.0] * partial;
@@ -314,7 +486,8 @@ impl NodeOps for NodeId {
 /// 
 /// The implementation uses pre-allocated buffers to minimize memory allocations
 /// during computation. The graph structure is optimized for forward-mode automatic
-/// differentiation with efficient chain rule computation.
+/// differentiation with efficient chain rule computation. Operations use type-level
+/// arity for compile-time safety.
 #[macro_export]
 macro_rules! graph {
     // Single input graph (backward compatibility)

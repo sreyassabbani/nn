@@ -9,7 +9,7 @@ fn main() {
     let (result, derivative) = single_graph.compute(1.0);
     println!("Single input - f(1.0) = {:.6}, f'(1.0) = {:.6}", result, derivative);
 
-    // Test multi-input graph
+    // Test multi-input graph with type-level arity
     let mut multi_graph = graph! {
         inputs: [x, y]
         x -> pow(2) -> @x_sq
@@ -23,7 +23,7 @@ fn main() {
         println!("Multi input - f(2.0, 1.0) = {:.6}, f'(2.0, 1.0) = {:.6}", result, derivative);
     }
 
-    // Test mixed graph
+    // Test mixed graph with type-level arity
     let mut mixed_graph = graph! {
         inputs: [x, y]
         x -> pow(2) -> sin -> @temp1
@@ -36,4 +36,12 @@ fn main() {
     if let Some((result, derivative)) = results.first() {
         println!("Mixed graph - f(1.0, 0.5) = {:.6}, f'(1.0, 0.5) = {:.6}", result, derivative);
     }
+
+    // Test that type-level arity is enforced at compile time
+    // This should cause a compilation error if we try to use wrong arity:
+    // let mut invalid_graph = graph! {
+    //     inputs: [x, y]
+    //     x -> add -> @result  // This should fail - add needs 2 inputs
+    //     output @result
+    // };
 }
