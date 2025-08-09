@@ -244,29 +244,30 @@ impl CompGraph {
 ///
 /// Single input graph:
 /// ```rust
-/// let graph = graph! {
-///     input -> sin -> cos -> output
+/// let graph = nn::graph! {
+///     input -> Sin -> Cos -> output
 /// };
 /// ```
 ///
 /// Multi-input graph:
 /// ```rust
-/// let graph = graph! {
+/// let graph = nn::graph! {
 ///     inputs: [x, y]
-///     x -> pow(2) -> @x_sq
-///     y -> sin -> @y_sin
-///     (@x_sq, @y_sin) -> add -> @result
+///     x -> Pow(2) -> @x_sq
+///     y -> Sin -> @y_sin
+///     (@x_sq, @y_sin) -> Add -> @result
 ///     output @result
 /// };
 /// ```
 ///
 /// Mixed graph (operations without intermediate names):
 /// ```rust
-/// let graph = graph! {
+/// let graph = nn::graph! {
 ///     inputs: [x, y]
-///     x -> pow(2) -> sin -> @temp1
-///     y -> cos -> scale(2.0) -> @temp2
-///     (@temp1, @temp2) -> mul -> output
+///     x -> Pow(2) -> @temp1
+///     y -> Cos -> @temp2
+///     (@temp1, @temp2) -> Mul -> @res
+///     output @res
 /// };
 /// ```
 ///
@@ -305,34 +306,18 @@ macro_rules! graph {
     };
 
     // Linear building (single input)
-    (@build_linear [$($ops:expr,)*], sin -> $($rest:tt)*) => {
+    (@build_linear [$($ops:expr,)*], $op:ident -> $($rest:tt)*) => {
         $crate::graph! {
             @build_linear
-            [$($ops,)* Op::Sin,],
+            [$($ops,)* Op::$op,],
             $($rest)*
         }
     };
 
-    (@build_linear [$($ops:expr,)*], cos -> $($rest:tt)*) => {
+    (@build_linear [$($ops:expr,)*], $op:ident ( $($op_args:tt)* ) -> $($rest:tt)*) => {
         $crate::graph! {
             @build_linear
-            [$($ops,)* Op::Cos,],
-            $($rest)*
-        }
-    };
-
-    (@build_linear [$($ops:expr,)*], scale($x:expr) -> $($rest:tt)*) => {
-        $crate::graph! {
-            @build_linear
-            [$($ops,)* Op::Scale($x),],
-            $($rest)*
-        }
-    };
-
-    (@build_linear [$($ops:expr,)*], pow($n:literal) -> $($rest:tt)*) => {
-        $crate::graph! {
-            @build_linear
-            [$($ops,)* Op::Pow($n),],
+            [$($ops,)* Op::$op($($op_args)*),],
             $($rest)*
         }
     };
@@ -371,78 +356,4 @@ macro_rules! graph {
     (@build_multi $graph:ident, output) => {
         $graph
     };
-
-    // Multi-input building with custom names (lowercase)
-    // (@build_multi $graph:ident, $input:ident -> sin -> @ $node:ident $($rest:tt)*) => {
-    //     let $node = $graph.operation(Op::Sin, vec![$input]);
-    //     $crate::graph! {
-    //         @build_multi
-    //         $graph,
-    //         $($rest)*
-    //     }
-    // };
-
-    // (@build_multi $graph:ident, $input:ident -> cos -> @ $node:ident $($rest:tt)*) => {
-    //     let $node = $graph.operation(Op::Cos, vec![$input]);
-    //     $crate::graph! {
-    //         @build_multi
-    //         $graph,
-    //         $($rest)*
-    //     }
-    // };
-
-    // (@build_multi $graph:ident, $input:ident -> pow($n:literal) -> @ $node:ident $($rest:tt)*) => {
-    //     let $node = $graph.operation(Op::Pow($n), vec![$input]);
-    //     $crate::graph! {
-    //         @build_multi
-    //         $graph,
-    //         $($rest)*
-    //     }
-    // };
-
-    // (@build_multi $graph:ident, $input:ident -> scale($x:expr) -> @ $node:ident $($rest:tt)*) => {
-    //     let $node = $graph.operation(Op::Scale($x), vec![$input]);
-    //     $crate::graph! {
-    //         @build_multi
-    //         $graph,
-    //         $($rest)*
-    //     }
-    // };
-
-    // // Handle operations without intermediate names
-    // (@build_multi $graph:ident, $input:ident -> sin $($rest:tt)*) => {
-    //     let temp_node = $graph.operation(Op::Sin, vec![$input]);
-    //     $crate::graph! {
-    //         @build_multi
-    //         $graph,
-    //         $($rest)*
-    //     }
-    // };
-
-    // (@build_multi $graph:ident, $input:ident -> cos $($rest:tt)*) => {
-    //     let temp_node = $graph.operation(Op::Cos, vec![$input]);
-    //     $crate::graph! {
-    //         @build_multi
-    //         $graph,
-    //         $($rest)*
-    //     }
-    // };
-
-    // (@build_multi $graph:ident, $input:ident -> pow($n:literal) $($rest:tt)*) => {
-    //     let temp_node = $graph.operation(Op::Pow($n), vec![$input]);
-    //     $crate::graph! {
-    //         @build_multi
-    //         $graph,
-    //         $($rest)*
-    //     }
-    // };
-
-    // (@build_multi $graph:ident, $input:ident -> scale($x:expr) $($rest:tt)*) => {
-    //     let temp_node = $graph.operation(Op::Scale($x), vec![$input]);
-    //     $crate::graph! {
-    //         @build_multi
-    //         $graph,
-    //         $($rest)*
-    //     }
-    // };
 }

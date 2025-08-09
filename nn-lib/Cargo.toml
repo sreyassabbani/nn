@@ -7,7 +7,7 @@ edition = "2024"
 unstable = []
 
 [dependencies]
-rand = "0.9.1"
+rand = "0.9.2"
 nn-macros = { path = "../nn-macros" }
 
 [[example]]
@@ -18,3 +18,7 @@ required-features = ["unstable"]
 [[example]]
 name = "quadratic-regression"
 path = "./examples/quadratic_regression.rs"
+
+[[example]]
+name = "multi-input"
+path = "./examples/multi_input.rs"
