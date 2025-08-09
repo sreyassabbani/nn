@@ -3,7 +3,7 @@ use nn::graph;
 fn main() {
     // Test single input graph (backward compatibility)
     let mut single_graph = graph! {
-        input -> sin -> cos -> output
+        input -> Sin -> Cos -> Pow(2) -> output
     };
 
     let (result, derivative) = single_graph.compute(1.0);
@@ -14,7 +14,7 @@ fn main() {
 
     // Test multi-input graph with type-level arity
     let mut multi_graph = graph! {
-        inputs: [x, y, z]
+        inputs: [x, z]
         x -> Pow(2) -> @x_sq
         z -> Cos -> @z_cos
         (@x_sq, @z_cos) -> Add -> @result

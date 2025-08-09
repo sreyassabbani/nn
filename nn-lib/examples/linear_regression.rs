@@ -15,7 +15,7 @@ fn main() {
 
     // Example with a computation graph
     let mut graph = graph! {
-        input -> pow(2) -> cos -> scale((1.0 / 3.0)) -> scale((1.0 / 3.0)) -> scale(3.0) -> output
+        input -> Pow(2) -> Cos -> Scale((1.0 / 3.0)) -> Scale((1.0 / 3.0)) -> Scale(3.0) -> output
     };
 
     let (f_of_2, f_p_of_2) = graph.compute(2.0);
@@ -40,9 +40,10 @@ fn main() {
     // Mixed chaining example
     let mut mixed = graph! {
         inputs: [x, y]
-        x -> pow(2) -> sin -> @temp1
-        y -> cos -> scale(2.0) -> @temp2
-        (@temp1, @temp2) -> mul -> output
+        x -> Pow(2) -> @temp1
+        y -> Cos -> @temp2
+        (@temp1, @temp2) -> mul -> @res
+        output @res
     };
 
     let (mval, mgrad) = mixed.compute(&[1.0, 0.0]);
