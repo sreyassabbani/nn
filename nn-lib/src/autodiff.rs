@@ -19,7 +19,7 @@ pub struct MultiGraph {
 #[derive(Debug, Clone)]
 pub enum Node {
     Input(String),
-    Operation(Box<dyn OpTrait>),
+    AfterOperation(Op, Box<[NodeId]>),
     Output(NodeId),
 }
 
@@ -53,167 +53,13 @@ impl Op {
             Op::Cos => -inputs[0].sin(),
             Op::Pow(exp) => exp as f64 * inputs[0].powi(exp - 1),
             Op::Add => 1.0,
-            Op::Mul => {
-                inputs.iter()
-                    .enumerate()
-                    .filter(|(i, _)| *i != input_idx)
-                    .map(|(_, &x)| x)
-                    .product()
-            }
+            Op::Mul => inputs
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != input_idx)
+                .map(|(_, &x)| x)
+                .product(),
         }
-    }
-}
-
-/// Trait for operations with type-level arity
-pub trait OpTrait: std::fmt::Debug {
-    const ARITY: usize;
-    
-    fn compute(&self, inputs: &[f64]) -> f64;
-    fn compute_derivative(&self, inputs: &[f64], input_idx: usize) -> f64;
-    fn input_ids(&self) -> &[NodeId];
-}
-
-// Single-input operations
-#[derive(Debug)]
-pub struct ScaleOp {
-    pub factor: f64,
-    pub input_id: NodeId,
-}
-
-impl OpTrait for ScaleOp {
-    const ARITY: usize = 1;
-    
-    fn compute(&self, inputs: &[f64]) -> f64 {
-        debug_assert_eq!(inputs.len(), Self::ARITY, "ScaleOp requires exactly {} input", Self::ARITY);
-        inputs[0] * self.factor
-    }
-    
-    fn compute_derivative(&self, _inputs: &[f64], _input_idx: usize) -> f64 {
-        self.factor
-    }
-    
-    fn input_ids(&self) -> &[NodeId] {
-        std::slice::from_ref(&self.input_id)
-    }
-}
-
-#[derive(Debug)]
-pub struct SinOp {
-    pub input_id: NodeId,
-}
-
-impl OpTrait for SinOp {
-    const ARITY: usize = 1;
-    
-    fn compute(&self, inputs: &[f64]) -> f64 {
-        debug_assert_eq!(inputs.len(), Self::ARITY, "SinOp requires exactly {} input", Self::ARITY);
-        inputs[0].sin()
-    }
-    
-    fn compute_derivative(&self, inputs: &[f64], _input_idx: usize) -> f64 {
-        debug_assert_eq!(inputs.len(), Self::ARITY, "SinOp requires exactly {} input", Self::ARITY);
-        inputs[0].cos()
-    }
-    
-    fn input_ids(&self) -> &[NodeId] {
-        std::slice::from_ref(&self.input_id)
-    }
-}
-
-#[derive(Debug)]
-pub struct CosOp {
-    pub input_id: NodeId,
-}
-
-impl OpTrait for CosOp {
-    const ARITY: usize = 1;
-    
-    fn compute(&self, inputs: &[f64]) -> f64 {
-        debug_assert_eq!(inputs.len(), Self::ARITY, "CosOp requires exactly {} input", Self::ARITY);
-        inputs[0].cos()
-    }
-    
-    fn compute_derivative(&self, inputs: &[f64], _input_idx: usize) -> f64 {
-        debug_assert_eq!(inputs.len(), Self::ARITY, "CosOp requires exactly {} input", Self::ARITY);
-        -inputs[0].sin()
-    }
-    
-    fn input_ids(&self) -> &[NodeId] {
-        std::slice::from_ref(&self.input_id)
-    }
-}
-
-#[derive(Debug)]
-pub struct PowOp {
-    pub exp: i32,
-    pub input_id: NodeId,
-}
-
-impl OpTrait for PowOp {
-    const ARITY: usize = 1;
-    
-    fn compute(&self, inputs: &[f64]) -> f64 {
-        debug_assert_eq!(inputs.len(), Self::ARITY, "PowOp requires exactly {} input", Self::ARITY);
-        inputs[0].powi(self.exp)
-    }
-    
-    fn compute_derivative(&self, inputs: &[f64], _input_idx: usize) -> f64 {
-        debug_assert_eq!(inputs.len(), Self::ARITY, "PowOp requires exactly {} input", Self::ARITY);
-        self.exp as f64 * inputs[0].powi(self.exp - 1)
-    }
-    
-    fn input_ids(&self) -> &[NodeId] {
-        std::slice::from_ref(&self.input_id)
-    }
-}
-
-// Two-input operations
-#[derive(Debug)]
-pub struct AddOp {
-    pub input_ids: [NodeId; 2],
-}
-
-impl OpTrait for AddOp {
-    const ARITY: usize = 2;
-    
-    fn compute(&self, inputs: &[f64]) -> f64 {
-        debug_assert_eq!(inputs.len(), Self::ARITY, "AddOp requires exactly {} inputs", Self::ARITY);
-        inputs.iter().sum()
-    }
-    
-    fn compute_derivative(&self, _inputs: &[f64], _input_idx: usize) -> f64 {
-        1.0
-    }
-    
-    fn input_ids(&self) -> &[NodeId] {
-        &self.input_ids
-    }
-}
-
-#[derive(Debug)]
-pub struct MulOp {
-    pub input_ids: [NodeId; 2],
-}
-
-impl OpTrait for MulOp {
-    const ARITY: usize = 2;
-    
-    fn compute(&self, inputs: &[f64]) -> f64 {
-        debug_assert_eq!(inputs.len(), Self::ARITY, "MulOp requires exactly {} inputs", Self::ARITY);
-        inputs.iter().product()
-    }
-    
-    fn compute_derivative(&self, inputs: &[f64], input_idx: usize) -> f64 {
-        debug_assert_eq!(inputs.len(), Self::ARITY, "MulOp requires exactly {} inputs", Self::ARITY);
-        inputs.iter()
-            .enumerate()
-            .filter(|(i, _)| *i != input_idx)
-            .map(|(_, &x)| x)
-            .product()
-    }
-    
-    fn input_ids(&self) -> &[NodeId] {
-        &self.input_ids
     }
 }
 
@@ -236,36 +82,14 @@ impl MultiGraph {
         id
     }
 
-    pub fn operation(&mut self, op: Op, inputs: Vec<NodeId>) -> NodeId {
+    pub fn operation<I>(&mut self, op: Op, inputs: I) -> NodeId
+    where
+        I: AsRef<[NodeId]>,
+    {
         let id = NodeId(self.next_id);
         self.next_id += 1;
-        let operation = match op {
-            Op::Scale(factor) => {
-                debug_assert_eq!(inputs.len(), 1, "Scale operation requires exactly 1 input");
-                Box::new(ScaleOp { factor, input_id: inputs[0] })
-            }
-            Op::Sin => {
-                debug_assert_eq!(inputs.len(), 1, "Sin operation requires exactly 1 input");
-                Box::new(SinOp { input_id: inputs[0] })
-            }
-            Op::Cos => {
-                debug_assert_eq!(inputs.len(), 1, "Cos operation requires exactly 1 input");
-                Box::new(CosOp { input_id: inputs[0] })
-            }
-            Op::Pow(exp) => {
-                debug_assert_eq!(inputs.len(), 1, "Pow operation requires exactly 1 input");
-                Box::new(PowOp { exp, input_id: inputs[0] })
-            }
-            Op::Add => {
-                debug_assert_eq!(inputs.len(), 2, "Add operation requires exactly 2 inputs");
-                Box::new(AddOp { input_ids: [inputs[0], inputs[1]] })
-            }
-            Op::Mul => {
-                debug_assert_eq!(inputs.len(), 2, "Mul operation requires exactly 2 inputs");
-                Box::new(MulOp { input_ids: [inputs[0], inputs[1]] })
-            }
-        };
-        self.nodes.push(Node::Operation(operation));
+        self.nodes
+            .push(Node::AfterOperation(op, Box::from(inputs.as_ref())));
         id
     }
 
@@ -279,7 +103,7 @@ impl MultiGraph {
     pub fn compute(&mut self, inputs: &[f64]) -> Vec<(f64, f64)> {
         self.primals.clear();
         self.tangents.clear();
-        
+
         // Ensure buffers are large enough
         let needed_size = self.nodes.len();
         if self.primals.capacity() < needed_size {
@@ -323,22 +147,22 @@ impl MultiGraph {
 
         // Second pass: handle operations (topological order)
         for (i, node) in self.nodes.iter().enumerate() {
-            if let Node::Operation(op) = node {
+            if let Node::AfterOperation(op, inputs) = node {
                 // Pre-allocate input_primals to avoid repeated allocations
-                let mut input_primals = Vec::with_capacity(op.input_ids().len());
-                for &id in op.input_ids() {
+                let mut input_primals = Vec::with_capacity(inputs.len());
+                for &id in inputs {
                     if id.0 < self.primals.len() {
                         input_primals.push(self.primals[id.0]);
                     } else {
                         input_primals.push(0.0);
                     }
                 }
-                
+
                 self.primals[i] = op.compute(&input_primals);
-                
+
                 // Compute derivatives using chain rule
                 let mut total_derivative = 0.0;
-                for (j, &input_id) in op.input_ids().iter().enumerate() {
+                for (j, &input_id) in inputs.iter().enumerate() {
                     if input_id.0 < self.tangents.len() {
                         let partial = op.compute_derivative(&input_primals, j);
                         total_derivative += self.tangents[input_id.0] * partial;
@@ -362,7 +186,8 @@ impl MultiGraph {
         }
 
         // Collect outputs
-        self.nodes.iter()
+        self.nodes
+            .iter()
             .enumerate()
             .filter_map(|(i, node)| {
                 if matches!(node, Node::Output(_)) {
@@ -413,54 +238,17 @@ impl CompGraph {
     }
 }
 
-// Extension traits for ergonomic API
-pub trait NodeOps {
-    fn sin(self) -> NodeId;
-    fn cos(self) -> NodeId;
-    fn pow(self, exp: i32) -> NodeId;
-    fn scale(self, factor: f64) -> NodeId;
-    fn add(self, other: NodeId) -> NodeId;
-    fn mul(self, other: NodeId) -> NodeId;
-}
-
-impl NodeOps for NodeId {
-    fn sin(self) -> NodeId {
-        // This would need access to the graph, so we'll implement this differently
-        unimplemented!("Use graph.operation(Op::Sin, vec![self]) instead")
-    }
-
-    fn cos(self) -> NodeId {
-        unimplemented!("Use graph.operation(Op::Cos, vec![self]) instead")
-    }
-
-    fn pow(self, exp: i32) -> NodeId {
-        unimplemented!("Use graph.operation(Op::Pow(exp), vec![self]) instead")
-    }
-
-    fn scale(self, factor: f64) -> NodeId {
-        unimplemented!("Use graph.operation(Op::Scale(factor), vec![self]) instead")
-    }
-
-    fn add(self, other: NodeId) -> NodeId {
-        unimplemented!("Use graph.operation(Op::Add, vec![self, other]) instead")
-    }
-
-    fn mul(self, other: NodeId) -> NodeId {
-        unimplemented!("Use graph.operation(Op::Mul, vec![self, other]) instead")
-    }
-}
-
 /// Macro for building computation graphs
-/// 
+///
 /// # Examples
-/// 
+///
 /// Single input graph:
 /// ```rust
 /// let graph = graph! {
 ///     input -> sin -> cos -> output
 /// };
 /// ```
-/// 
+///
 /// Multi-input graph:
 /// ```rust
 /// let graph = graph! {
@@ -471,7 +259,7 @@ impl NodeOps for NodeId {
 ///     output @result
 /// };
 /// ```
-/// 
+///
 /// Mixed graph (operations without intermediate names):
 /// ```rust
 /// let graph = graph! {
@@ -481,9 +269,9 @@ impl NodeOps for NodeId {
 ///     (@temp1, @temp2) -> mul -> output
 /// };
 /// ```
-/// 
+///
 /// # Performance Notes
-/// 
+///
 /// The implementation uses pre-allocated buffers to minimize memory allocations
 /// during computation. The graph structure is optimized for forward-mode automatic
 /// differentiation with efficient chain rule computation. Operations use type-level
@@ -553,117 +341,24 @@ macro_rules! graph {
         CompGraph::new(Vec::from([$($ops,)*]))
     };
 
-    // Multi-input building
-    (@build_multi $graph:ident, $input:ident -> sin -> @$node:ident $($rest:tt)*) => {
-        let $node = $graph.operation(Op::Sin, vec![$input]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
+    (@build_multi $graph:ident, $node:ident -> $op:ident -> @ $result:ident $($rest:tt)*) => {
+        let $result = $graph.operation(Op::$op, vec![$node]);
+        $crate::graph! { @build_multi $graph, $($rest)* }
     };
 
-    (@build_multi $graph:ident, $input:ident -> cos -> @$node:ident $($rest:tt)*) => {
-        let $node = $graph.operation(Op::Cos, vec![$input]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
+    // Generic N-ary op without extra args: (@a, @b, @c) -> add -> @result
+    (@build_multi $graph:ident, ( $( @ $node:ident ),+ ) -> $op:ident -> @ $result:ident $($rest:tt)*) => {
+        let $result = $graph.operation(Op::$op, vec![$($node),+]);
+        $crate::graph! { @build_multi $graph, $($rest)* }
     };
 
-    (@build_multi $graph:ident, $input:ident -> pow($n:literal) -> @$node:ident $($rest:tt)*) => {
-        let $node = $graph.operation(Op::Pow($n), vec![$input]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
+    // Generic N-ary op with extra args: (@a, @b, @c) -> scale(2.0) -> @res
+    (@build_multi $graph:ident, ( $( @ $node:ident ),+ ) -> $op:ident ( $($op_args:tt)* ) -> @ $result:ident $($rest:tt)*) => {
+        let $result = $graph.operation(Op::$op($($op_args)*), vec![$($node),+]);
+        $crate::graph! { @build_multi $graph, $($rest)* }
     };
 
-    (@build_multi $graph:ident, $input:ident -> scale($x:expr) -> @$node:ident $($rest:tt)*) => {
-        let $node = $graph.operation(Op::Scale($x), vec![$input]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
-    };
-
-    // Handle operations without intermediate names
-    (@build_multi $graph:ident, $input:ident -> sin $($rest:tt)*) => {
-        let temp_node = $graph.operation(Op::Sin, vec![$input]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
-    };
-
-    (@build_multi $graph:ident, $input:ident -> cos $($rest:tt)*) => {
-        let temp_node = $graph.operation(Op::Cos, vec![$input]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
-    };
-
-    (@build_multi $graph:ident, $input:ident -> pow($n:literal) $($rest:tt)*) => {
-        let temp_node = $graph.operation(Op::Pow($n), vec![$input]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
-    };
-
-    (@build_multi $graph:ident, $input:ident -> scale($x:expr) $($rest:tt)*) => {
-        let temp_node = $graph.operation(Op::Scale($x), vec![$input]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
-    };
-
-    (@build_multi $graph:ident, (@$node1:ident, @$node2:ident) -> add -> @$result:ident $($rest:tt)*) => {
-        let $result = $graph.operation(Op::Add, vec![$node1, $node2]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
-    };
-
-    (@build_multi $graph:ident, (@$node1:ident, @$node2:ident) -> mul -> @$result:ident $($rest:tt)*) => {
-        let $result = $graph.operation(Op::Mul, vec![$node1, $node2]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
-    };
-
-    (@build_multi $graph:ident, (@$node1:ident, @$node2:ident) -> add $($rest:tt)*) => {
-        let temp_node = $graph.operation(Op::Add, vec![$node1, $node2]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
-    };
-
-    (@build_multi $graph:ident, (@$node1:ident, @$node2:ident) -> mul $($rest:tt)*) => {
-        let temp_node = $graph.operation(Op::Mul, vec![$node1, $node2]);
-        $crate::graph! {
-            @build_multi
-            $graph,
-            $($rest)*
-        }
-    };
-
-    (@build_multi $graph:ident, output @$node:ident) => {
+    (@build_multi $graph:ident, output @ $node:ident) => {
         $graph.output($node);
         $graph
     };
@@ -671,4 +366,78 @@ macro_rules! graph {
     (@build_multi $graph:ident, output) => {
         $graph
     };
+
+    // Multi-input building with custom names (lowercase)
+    // (@build_multi $graph:ident, $input:ident -> sin -> @ $node:ident $($rest:tt)*) => {
+    //     let $node = $graph.operation(Op::Sin, vec![$input]);
+    //     $crate::graph! {
+    //         @build_multi
+    //         $graph,
+    //         $($rest)*
+    //     }
+    // };
+
+    // (@build_multi $graph:ident, $input:ident -> cos -> @ $node:ident $($rest:tt)*) => {
+    //     let $node = $graph.operation(Op::Cos, vec![$input]);
+    //     $crate::graph! {
+    //         @build_multi
+    //         $graph,
+    //         $($rest)*
+    //     }
+    // };
+
+    // (@build_multi $graph:ident, $input:ident -> pow($n:literal) -> @ $node:ident $($rest:tt)*) => {
+    //     let $node = $graph.operation(Op::Pow($n), vec![$input]);
+    //     $crate::graph! {
+    //         @build_multi
+    //         $graph,
+    //         $($rest)*
+    //     }
+    // };
+
+    // (@build_multi $graph:ident, $input:ident -> scale($x:expr) -> @ $node:ident $($rest:tt)*) => {
+    //     let $node = $graph.operation(Op::Scale($x), vec![$input]);
+    //     $crate::graph! {
+    //         @build_multi
+    //         $graph,
+    //         $($rest)*
+    //     }
+    // };
+
+    // // Handle operations without intermediate names
+    // (@build_multi $graph:ident, $input:ident -> sin $($rest:tt)*) => {
+    //     let temp_node = $graph.operation(Op::Sin, vec![$input]);
+    //     $crate::graph! {
+    //         @build_multi
+    //         $graph,
+    //         $($rest)*
+    //     }
+    // };
+
+    // (@build_multi $graph:ident, $input:ident -> cos $($rest:tt)*) => {
+    //     let temp_node = $graph.operation(Op::Cos, vec![$input]);
+    //     $crate::graph! {
+    //         @build_multi
+    //         $graph,
+    //         $($rest)*
+    //     }
+    // };
+
+    // (@build_multi $graph:ident, $input:ident -> pow($n:literal) $($rest:tt)*) => {
+    //     let temp_node = $graph.operation(Op::Pow($n), vec![$input]);
+    //     $crate::graph! {
+    //         @build_multi
+    //         $graph,
+    //         $($rest)*
+    //     }
+    // };
+
+    // (@build_multi $graph:ident, $input:ident -> scale($x:expr) $($rest:tt)*) => {
+    //     let temp_node = $graph.operation(Op::Scale($x), vec![$input]);
+    //     $crate::graph! {
+    //         @build_multi
+    //         $graph,
+    //         $($rest)*
+    //     }
+    // };
 }
