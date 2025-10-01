@@ -14,6 +14,13 @@ mod parsing {
     }
 
     pub enum Layer {
+        Conv {
+            /// Number of output channels/features in the output. Alternatively, this may be interpreted as the number of filters in the convolutional layer.
+            out_channels: usize,
+            kernel: usize,
+            stride: usize,
+            padding: usize,
+        },
         Dense(usize),
         ReLU,
         Sigmoid,
@@ -47,6 +54,39 @@ mod parsing {
                     "sigmoid" | "Sigmoid" => {
                         layers.push(Layer::Sigmoid);
                     }
+                    "conv" | "Conv" => {
+                        // parse parens with comma-separated ints; allow optional named args later
+                        let content;
+                        ::syn::parenthesized!(content in input);
+
+                        // minimal syntax: conv(out, kernel) or conv(out, kernel, stride, pad)
+                        let out_c: LitInt = content.parse()?;
+                        let _comma = content.parse::<Token![,]>()?;
+                        let k: LitInt = content.parse()?;
+
+                        // defaults:
+                        let mut stride = 1usize;
+                        let mut pad = 0usize;
+
+                        // optional additional positional args
+                        if content.peek(Token![,]) {
+                            content.parse::<Token![,]>()?;
+                            let s: LitInt = content.parse()?;
+                            stride = s.base10_parse()?;
+                            if content.peek(Token![,]) {
+                                content.parse::<Token![,]>()?;
+                                let p: LitInt = content.parse()?;
+                                pad = p.base10_parse()?;
+                            }
+                        }
+
+                        layers.push(Layer::Conv {
+                            out_channels: out_c.base10_parse()?,
+                            kernel: k.base10_parse()?,
+                            stride,
+                            padding: pad,
+                        });
+                    }
                     "output" => break,
                     _ => return Err(::syn::Error::new(layer_name.span(), "Unknown layer type")),
                 }
@@ -68,11 +108,9 @@ mod parsing {
     }
 }
 
-use parsing::*;
-
 #[proc_macro]
 pub fn network(input: TokenStream) -> TokenStream {
-    let network_def = parse_macro_input!(input as NetworkDef);
+    let network_def = parse_macro_input!(input as parsing::NetworkDef);
 
     // Generate the network code
     let generated = generate_network(network_def);
@@ -80,7 +118,7 @@ pub fn network(input: TokenStream) -> TokenStream {
     generated.into()
 }
 
-fn generate_network(def: NetworkDef) -> TokenStream2 {
+fn generate_network(def: parsing::NetworkDef) -> TokenStream2 {
     let input_size = def.input_size;
     let layer_count = def.layers.len();
 
@@ -91,6 +129,8 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
         .layers
         .into_iter()
         .map(|layer| {
+            use parsing::Layer;
+
             return match layer {
                 Layer::Dense(out_size) => {
                     let l = quote! { ::nn::network::DenseLayer<#current_size, #out_size> };
@@ -101,6 +141,12 @@ fn generate_network(def: NetworkDef) -> TokenStream2 {
                 // Working data buffer's size stays the same for activation functions
                 Layer::ReLU => quote! { ::nn::network::ReLU<#current_size> },
                 Layer::Sigmoid => quote! { ::nn::network::Sigmoid<#current_size> },
+                Layer::Conv {
+                    out_channels,
+                    kernel,
+                    stride,
+                    padding,
+                } => quote! { ::nn::network::Conv<#current_size> },
             };
         })
         .collect();

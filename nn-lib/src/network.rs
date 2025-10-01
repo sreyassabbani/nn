@@ -13,6 +13,10 @@ pub struct ReLU<const N: usize>;
 #[derive(Debug)]
 pub struct Sigmoid<const N: usize>;
 
+// Conv
+#[derive(Debug)]
+pub struct Conv<const C: usize, const H: usize, const W: usize>;
+
 // Forward pass implementation for ReLU
 impl<const N: usize> ReLU<N> {
     pub fn init() -> Self {
