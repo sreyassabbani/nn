@@ -1,6 +1,8 @@
 #![allow(unused)]
 #![feature(generic_arg_infer)]
 
+use std::f64::consts::PI;
+
 use nn::graph;
 use nn::network as nt;
 
@@ -27,13 +29,18 @@ fn main() {
     // Multi-input autodiff example
     let mut multi = graph! {
         inputs: [x, y]
-        x -> pow(2) -> @x_sq
-        y -> sin -> @y_sin
-        (@x_sq, @y_sin) -> add -> @result
+        x -> Pow(2) -> @x_sq
+        y -> Sin -> @y_sin
+        (@x_sq, @y_sin) -> Add -> @result
         output @result
     };
 
-    let (value, grad) = multi.compute(&[2.0, std::f64::consts::PI / 2.0]);
+    let (value, grad) = multi
+        .compute(&[2.0, PI / 2.0])
+        .into_iter()
+        .next()
+        .expect("compute should return vec of 1 element here - sad");
+
     println!("multi value: {}", value);
     println!("multi grad: {:?}", grad);
 
@@ -42,11 +49,16 @@ fn main() {
         inputs: [x, y]
         x -> Pow(2) -> @temp1
         y -> Cos -> @temp2
-        (@temp1, @temp2) -> mul -> @res
+        (@temp1, @temp2) -> Mul -> @res
         output @res
     };
 
-    let (mval, mgrad) = mixed.compute(&[1.0, 0.0]);
+    let (mval, mgrad) = mixed
+        .compute(&[1.0, 0.0])
+        .into_iter()
+        .next()
+        .expect("compute shoudl return a vec of 1 element here - sad");
+
     println!("mixed value: {}", mval);
     println!("mixed grad: {:?}", mgrad);
 

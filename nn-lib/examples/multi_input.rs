@@ -1,5 +1,7 @@
 use nn::graph;
 
+use std::any::type_name_of_val;
+
 fn main() {
     // Test single input graph (backward compatibility)
     let mut single_graph = graph! {
@@ -12,6 +14,8 @@ fn main() {
         result, derivative
     );
 
+    println!("{}", type_name_of_val(&single_graph));
+
     // Test multi-input graph with type-level arity
     let mut multi_graph = graph! {
         inputs: [x, z]
@@ -20,6 +24,8 @@ fn main() {
         (@x_sq, @z_cos) -> Add -> @result
         output @result
     };
+
+    println!("{}", type_name_of_val(&multi_graph));
 
     let results = multi_graph.compute(&[2.0, 1.0]);
     if let Some((result, derivative)) = results.first() {
