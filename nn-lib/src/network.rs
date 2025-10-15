@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 // Define the DenseLayer struct with weights and biases
 #[derive(Debug)]
 pub struct DenseLayer<const IN: usize, const OUT: usize> {
@@ -13,9 +15,69 @@ pub struct ReLU<const N: usize>;
 #[derive(Debug)]
 pub struct Sigmoid<const N: usize>;
 
-// Conv
+/// A convolutional layer
+///
+/// `H` - filter/kernel height
+/// `W` - filter/kernel width
+/// `IC` - number of input channels
+/// `OC` - number of output channels (equivalently, number of kernels/filters)
+/// `S` - stride
+/// `P` - padding
 #[derive(Debug)]
-pub struct Conv<const C: usize, const H: usize, const W: usize>;
+pub struct Conv<
+    const IW: usize,
+    const IH: usize,
+    const IC: usize,
+    const H: usize,
+    const W: usize,
+    const OC: usize,
+    const S: usize,
+    const P: usize,
+> {
+    data: [Filter<H, W, IC>; OC],
+}
+
+// height, width, and depth (input channel size)
+#[derive(Debug, Copy, Clone)]
+pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
+
+// Forward pass implementation for Conv
+impl<
+    const IW: usize,
+    const IH: usize,
+    const IC: usize,
+    const H: usize,
+    const W: usize,
+    const OC: usize,
+    const S: usize,
+    const P: usize,
+> Conv<IW, IH, IC, H, W, OC, S, P>
+{
+    pub fn init() -> Self {
+        Conv {
+            data: [Filter([[[0.; H]; W]; IC]); OC],
+        }
+    }
+
+    pub fn forward(&self, input: &[f32], output: &mut [f32])
+    // where
+    //     I: AsRef<[f32; N]>,
+    {
+        let out_h = IH - H + 1;
+        let out_w = IW - W + 1;
+
+        for oc in 0..OC {
+            for ic in 0..IC {
+                for x in 0..out_w {
+                    for y in 0..out_h {
+                        output[oc * IC * out_w * out_h + ic * out_w * out_h + x * out_h + y] =
+                            input.as_ref()[i].max(0.0);
+                    }
+                }
+            }
+        }
+    }
+}
 
 // Forward pass implementation for ReLU
 impl<const N: usize> ReLU<N> {

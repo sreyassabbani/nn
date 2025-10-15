@@ -36,7 +36,12 @@ mod parsing {
         pub fn input(&self) -> usize {
             use Layer::*;
             match self {
-                Conv { .. } => 1,
+                Conv {
+                    kernel,
+                    stride,
+                    padding,
+                    ..
+                } => 1,
                 Dense { input, .. } => *input,
                 ReLU { width } => *width,
                 Sigmoid { width } => *width,
