@@ -9,7 +9,6 @@ mod parsing {
     use syn::parse::{Parse, ParseStream};
 
     pub struct NetworkDef {
-        pub input_size: usize,
         pub layers: Vec<Layer>,
     }
 
@@ -21,9 +20,28 @@ mod parsing {
             stride: usize,
             padding: usize,
         },
-        Dense(usize),
-        ReLU,
-        Sigmoid,
+        Dense {
+            input: usize,
+            output: usize,
+        },
+        ReLU {
+            width: usize,
+        },
+        Sigmoid {
+            width: usize,
+        },
+    }
+
+    impl Layer {
+        pub fn input(&self) -> usize {
+            use Layer::*;
+            match self {
+                Conv { .. } => 1,
+                Dense { input, .. } => *input,
+                ReLU { width } => *width,
+                Sigmoid { width } => *width,
+            }
+        }
     }
 
     impl Parse for NetworkDef {
@@ -32,7 +50,7 @@ mod parsing {
 
             let content;
             ::syn::parenthesized!(content in input);
-            let input_size: LitInt = content.parse()?;
+            let mut cur_size = content.parse::<LitInt>()?.base10_parse()?;
 
             input.parse::<Token![->]>()?;
 
@@ -45,14 +63,20 @@ mod parsing {
                     "dense" => {
                         let content;
                         ::syn::parenthesized!(content in input);
-                        let size: LitInt = content.parse()?;
-                        layers.push(Layer::Dense(size.base10_parse()?));
+                        let next_size = content.parse::<LitInt>()?.base10_parse()?;
+                        layers.push(Layer::Dense {
+                            input: cur_size,
+                            output: next_size,
+                        });
+
+                        // resize network width
+                        cur_size = next_size;
                     }
                     "relu" | "ReLU" => {
-                        layers.push(Layer::ReLU);
+                        layers.push(Layer::ReLU { width: cur_size });
                     }
                     "sigmoid" | "Sigmoid" => {
-                        layers.push(Layer::Sigmoid);
+                        layers.push(Layer::Sigmoid { width: cur_size });
                     }
                     "conv" | "Conv" => {
                         // parse parens with comma-separated ints; allow optional named args later
@@ -100,10 +124,7 @@ mod parsing {
                 }
             }
 
-            Ok(NetworkDef {
-                input_size: input_size.base10_parse()?,
-                layers,
-            })
+            Ok(NetworkDef { layers })
         }
     }
 }
@@ -119,7 +140,7 @@ pub fn network(input: TokenStream) -> TokenStream {
 }
 
 fn generate_network(def: parsing::NetworkDef) -> TokenStream2 {
-    let input_size = def.input_size;
+    let input_size = def.layers[0].input();
     let layer_count = def.layers.len();
 
     // Calculate maximum buffer size needed
@@ -132,15 +153,15 @@ fn generate_network(def: parsing::NetworkDef) -> TokenStream2 {
             use parsing::Layer;
 
             return match layer {
-                Layer::Dense(out_size) => {
-                    let l = quote! { ::nn::network::DenseLayer<#current_size, #out_size> };
-                    current_size = out_size;
-                    max_size = max_size.max(out_size);
+                Layer::Dense { output, .. } => {
+                    let l = quote! { ::nn::network::DenseLayer<#current_size, #output> };
+                    current_size = output;
+                    max_size = max_size.max(output);
                     return l;
                 }
                 // Working data buffer's size stays the same for activation functions
-                Layer::ReLU => quote! { ::nn::network::ReLU<#current_size> },
-                Layer::Sigmoid => quote! { ::nn::network::Sigmoid<#current_size> },
+                Layer::ReLU { .. } => quote! { ::nn::network::ReLU<#current_size> },
+                Layer::Sigmoid { .. } => quote! { ::nn::network::Sigmoid<#current_size> },
                 Layer::Conv {
                     out_channels,
                     kernel,
