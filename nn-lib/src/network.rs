@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops};
 
 // Define the DenseLayer struct with weights and biases
 #[derive(Debug)]
@@ -41,6 +41,55 @@ pub struct Conv<
 #[derive(Debug, Copy, Clone)]
 pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
 
+// pub struct Tensor<const N: usize, I> {
+//     data: [f64; N],
+//     _index_marker: PhantomData<I>
+// }
+
+pub struct Tensor<const N: usize, const I: [usize; N]> {
+    data: [f64; N],
+    _index_marker: PhantomData<I>
+}
+
+impl<const N: usize, I> ops::Index<I> for Tensor<N, I> {
+    type Output = f64;
+    fn index(&self, index: I) -> &Self::Output {
+        &3.
+    }
+}
+
+impl<const N: usize, const I: [usize; N]> Tensor<N, I> {
+    pub const fn reshape<IR>(self, dim: IR) -> Tensor<N, IR>
+    where IR: Iterator
+    {
+
+        let Tensor { data, .. } = self;
+        assert_eq!(dim.iter().product(), I.iter().product());
+        Tensor {
+            data,
+            _index_marker: PhantomData,
+        }
+    }
+}
+
+// pub struct Tensor<const N: usize, const D: usize> {
+//     data: [f64; N],
+//     shape: [usize; D] // i would really like this to be part of the type...
+// }
+
+// impl<const N: usize, const D: usize> ops::Index<[usize; D]> for Tensor<N, D> {
+//     type Output = f64;
+//     fn index(&self, index: [usize; D]) -> &Self::Output {
+//         &3.
+//     }
+// }
+
+// impl<const N: usize, const D: usize> Tensor<N, D> {
+//     fn reshape(&mut self, shape: [usize; D]) {
+//         self.shape = shape;
+//     }
+// }
+
 // Forward pass implementation for Conv
 impl<
     const IW: usize,
@@ -70,8 +119,14 @@ impl<
             for ic in 0..IC {
                 for x in 0..out_w {
                     for y in 0..out_h {
+                        let mut val = 0.;
+                        for ix in (x * S + W / 2)..() {
+                            for iy in (y * S + H / 2)..() {
+                                val += self.data[oc].0[ic][x][y] * input[];
+                            }
+                        }
                         output[oc * IC * out_w * out_h + ic * out_w * out_h + x * out_h + y] =
-                            input.as_ref()[i].max(0.0);
+                            val;
                     }
                 }
             }
