@@ -159,12 +159,13 @@ impl<
 where
     [(); H * W * IC]:,
 {
-    // pub fn init() -> Self {
-    //     Conv {
-    //         // data: [Filter(tensor!(H, W, IC)); OC],
-    //         data: [Filter([[[0.; H]; W]; IC]); OC],
-    //     }
-    // }
+    pub fn init() -> Self {
+        Conv {
+            // data: [Filter([[[0.; H]; W]; IC]); OC],
+            // data: [const { Filter(tensor!(H, W, IC)) }; OC],
+            data: [const { Filter::default() }; OC],
+        }
+    }
 
     // pub fn forward(&self, input: &[f32], output: &mut [f32])
     // // where
