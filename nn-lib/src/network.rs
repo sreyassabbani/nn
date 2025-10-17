@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops};
+use std::{array, marker::PhantomData, ops};
 
 // Define the DenseLayer struct with weights and biases
 #[derive(Debug)]
@@ -27,6 +27,12 @@ impl<const N: usize, Shape> Tensor<N, Shape> {
             data: [0.; N],
             _shape_marker: PhantomData,
         }
+    }
+}
+
+impl<const N: usize, Shape> Default for Tensor<N, Shape> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -138,7 +144,7 @@ pub struct Conv<
 
 // height, width, and depth (input channel size)
 // pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Filter<const H: usize, const W: usize, const D: usize>(
     pub Tensor<{ H * W * D }, crate::shape_ty!(H, W, D)>,
 )
@@ -163,7 +169,7 @@ where
         Conv {
             // data: [Filter([[[0.; H]; W]; IC]); OC],
             // data: [const { Filter(tensor!(H, W, IC)) }; OC],
-            data: [const { Filter::default() }; OC],
+            data: array::from_fn(|_| Filter::default()),
         }
     }
 
