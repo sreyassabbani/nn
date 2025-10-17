@@ -1,24 +1,22 @@
 use std::{marker::PhantomData, ops};
 
 #[derive(Debug, Clone)]
-pub struct Tensor<const N: usize, Shape, Index> {
+pub struct Tensor<const N: usize, const D: usize, Shape> {
     data: [f64; N],
     _shape_marker: PhantomData<Shape>,
-    _index_marker: PhantomData<Index>,
 }
 
-impl<const N: usize, Shape, Index> Tensor<N, Shape, Index> {
+impl<const N: usize, const D: usize, Index> Tensor<N, D, Index> {
     pub fn new() -> Self {
         Self {
             data: [0.; N],
             _shape_marker: PhantomData,
-            _index_marker: PhantomData,
         }
     }
 
-    pub fn reshape<AltShp>(self) -> Tensor<N, AltShp, Index>
+    pub fn reshape<AltShp>(self) -> Tensor<N, D, AltShp>
     where
-        Tensor<N, AltShp, Index>: Sized,
+        Tensor<N, D, AltShp>: Sized,
     {
         assert_eq!(size_of::<AltShp>(), N);
         let Tensor { data, .. } = self;
@@ -26,20 +24,19 @@ impl<const N: usize, Shape, Index> Tensor<N, Shape, Index> {
         Tensor {
             data,
             _shape_marker: PhantomData::<AltShp>,
-            _index_marker: PhantomData,
         }
     }
 }
 
-impl<const N: usize, Shape, Index> ops::Index<Index> for Tensor<N, Shape, Index> {
+impl<const N: usize, const D: usize, Shape> ops::Index<[usize; D]> for Tensor<N, D, Shape> {
     type Output = f64;
 
-    fn index(&self, index: Index) -> &Self::Output {
+    fn index(&self, index: [usize; D]) -> &Self::Output {
         &0.
     }
 }
 
-impl<const N: usize, Shape, Index> Default for Tensor<N, Shape, Index> {
+impl<const N: usize, const D: usize, Shape> Default for Tensor<N, D, Shape> {
     fn default() -> Self {
         Self::new()
     }
@@ -50,27 +47,31 @@ macro_rules! shape_ty {
     ($d:expr) => {
         [f64; $d]
     };
+
     ($first:expr, $($rest:expr),+ $(,)?) => {
         [$crate::shape_ty!($($rest),+); $first]
     };
 }
 
+// don't use this to calculate dims outside of anything. it can often lead to a "cycle detected when computing revealed normalized predicates" error
 #[macro_export]
-macro_rules! index_ty {
-    ($($item:expr),* $(,)?) => {
-        [usize; [$(stringify!($item)),*].len()]
-    };
+macro_rules! __dim_ty {
+    () => { 0 };
+    ($head:tt $($tail:tt)*) => { 1 + $crate::__dim_ty!($($tail)*) };
 }
 
 #[macro_export]
 macro_rules! tensor {
     ($first:expr $(, $rest:expr)* $(,)?) => {
         {
+            // number of elements
             const N: usize = $first $( * $rest )*;
-            type Shape = $crate::shape_ty!($first $(, $rest)*);
-            type Index = $crate::index_ty!($first $(, $rest)*);
+            // dimension
+            const D: usize = $crate::__dim_ty!($first $( * $rest )*);
 
-            <$crate::Tensor::<N, Shape, Index>>::new()
+            type Shape = $crate::shape_ty!($first $(, $rest)*);
+
+            <$crate::Tensor::<N, D, Shape>>::new()
         }
     };
 }
