@@ -1,4 +1,4 @@
-use std::{array, marker::PhantomData, ops};
+use std::array;
 
 use crate::tensor::Tensor;
 
@@ -17,20 +17,14 @@ pub struct ReLU<const N: usize>;
 #[derive(Debug)]
 pub struct Sigmoid<const N: usize>;
 
-struct Te<const H: usize, const W: usize, const D: usize>(
-    pub Tensor<{ H * W * D }, shape_ty!(H, W, D)>,
-)
-where
-    Tensor<{ H * W * D }, shape_ty!(H, W, D)>: Sized;
-
 // height, width, and depth (input channel size)
 // pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
 #[derive(Debug, Clone, Default)]
 pub struct Filter<const H: usize, const W: usize, const D: usize>(
-    pub Tensor<{ H * W * D }, shape_ty!(H, W, D)>,
+    Tensor<{ H * W * D }, shape_ty!(H, W, D)>,
 )
 where
-    Tensor<{ H * W * D }, shape_ty!(H, W, D)>: Sized;
+    Tensor<{ H * W * D }, shape_ty!(H, W, D)>: Sized; // current limitation of compiler's const generic features
 
 /// A convolutional layer
 ///
@@ -70,49 +64,52 @@ impl<
 where
     Tensor<{ H * W * IC }, shape_ty!(H, W, IC)>: Sized,
 {
-    // pub fn init() -> Self {
-    //     let mut data: [Filter<H, W, IC>; OC] = unsafe {
-    //         // Safe because we initialize immediately and Filter is Copy
-    //         std::mem::MaybeUninit::uninit().assume_init()
-    //     };
-
-    //     for item in &mut data {
-    //         *item = Filter::default();
-    //     }
-
-    //     Conv { data }
-    // }
-
     pub fn init() -> Self {
         Conv {
             data: array::from_fn(|_| Filter::default()),
         }
     }
 
-    // pub fn forward(&self, input: &[f32], output: &mut [f32])
-    // // where
-    // //     I: AsRef<[f32; N]>,
-    // {
-    //     let out_h = IH - H + 1;
-    //     let out_w = IW - W + 1;
+    pub fn forward(&self, input: &[f32], output: &mut [f32]) {
+        let out_h = (IH + 2 * P - H) / S + 1;
+        let out_w = (IW + 2 * P - W) / S + 1;
 
-    //     for oc in 0..OC {
-    //         for ic in 0..IC {
-    //             for x in 0..out_w {
-    //                 for y in 0..out_h {
-    //                     let mut val = 0.;
-    //                     for ix in (x * S + W / 2)..() {
-    //                         for iy in (y * S + H / 2)..() {
-    //                             val += self.data[oc].0[ic][x][y] * input[];
-    //                         }
-    //                     }
-    //                     output[oc * IC * out_w * out_h + ic * out_w * out_h + x * out_h + y] =
-    //                         val;
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+        // validate dimensions
+        assert_eq!(input.len(), IC * IH * IW);
+        assert_eq!(output.len(), OC * out_h * out_w);
+
+        for oc in 0..OC {
+            for y in 0..out_h {
+                for x in 0..out_w {
+                    let mut sum = 0.0;
+
+                    // apply filter
+                    for ic in 0..IC {
+                        for ky in 0..H {
+                            for kx in 0..W {
+                                let in_y = y * S + ky;
+                                let in_x = x * S + kx;
+
+                                if in_y >= P && in_y < IH + P && in_x >= P && in_x < IW + P {
+                                    let actual_y = in_y - P;
+                                    let actual_x = in_x - P;
+
+                                    let input_idx = ic * IH * IW + actual_y * IW + actual_x;
+                                    let filter_idx = ky * W * IC + kx * IC + ic;
+
+                                    sum +=
+                                        self.data[oc].0.data[filter_idx] as f32 * input[input_idx];
+                                }
+                            }
+                        }
+                    }
+
+                    let output_idx = oc * out_h * out_w + y * out_w + x;
+                    output[output_idx] = sum;
+                }
+            }
+        }
+    }
 }
 
 // Forward pass implementation for ReLU

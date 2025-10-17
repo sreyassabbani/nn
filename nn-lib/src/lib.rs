@@ -1,4 +1,3 @@
-#![feature(generic_arg_infer)]
 #![feature(generic_const_exprs)]
 #![feature(generic_const_items)]
 #![allow(incomplete_features)]

@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops};
 
 #[derive(Debug, Clone)]
 pub struct Tensor<const N: usize, Shape> {
@@ -12,6 +12,27 @@ impl<const N: usize, Shape> Tensor<N, Shape> {
             data: [0.; N],
             _shape_marker: PhantomData,
         }
+    }
+
+    pub fn reshape<AltShp>(self) -> Tensor<N, AltShp>
+    where
+        Tensor<N, AltShp>: Sized,
+    {
+        assert_eq!(size_of::<AltShp>(), N);
+        let Tensor { data, .. } = self;
+
+        Tensor {
+            data,
+            _shape_marker: PhantomData::<AltShp>,
+        }
+    }
+}
+
+impl<const N: usize, Shape> ops::Index<> for Tensor<N, Shape> {
+    type Output = ;
+
+    fn index(&self, index: Shape) -> &Self::Output {
+        
     }
 }
 
