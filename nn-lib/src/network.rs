@@ -41,12 +41,13 @@ pub struct Conv<
 #[derive(Debug, Copy, Clone)]
 pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
 
-pub struct Tensor<D> {
-    data: D,
+pub struct Tensor<const N: usize, I> {
+    data: [f64; N],
+    _index_marker: PhantomData<I>,
 }
 
 // tensor!(2, 3) = Tensor<[[f64; 2]; 3]>
-// 
+//
 
 // #[macro_export]
 // macro_rules! tensor {
@@ -70,7 +71,7 @@ pub struct Tensor<D> {
 
 //     (@build $($dims:tt)*,) => {
 //         Tensor<$($dims)*> {
-//             data: 
+//             data:
 //         }
 //     };
 // }
@@ -78,18 +79,26 @@ pub struct Tensor<D> {
 #[macro_export]
 macro_rules! tensor {
     ($d:expr) => {
-        $crate::network::Tensor<[f64; $d]> {
-            data: 
+        $crate::network::Tensor<$d, [f64; $d]> {
+            data: [0.; $d]
         }
     };
 
     ($first:expr, $($rest:expr),+ $(,)?) => {
-        $crate::network::Tensor<[$crate::tensor!($($rest),+); $first]> {
-            data: 
+        $crate::tensor!($first, [$($rest),+; $first])
+    };
+
+    (@build $prod:expr, $first:expr, $($rest:expr),+ $(,)?) => {
+        $crate::tensor!(@build $prod * $first, [$($rest),+; $first])
+    };
+
+    (@build $prod:expr, $first:expr $(,)?) => {
+        $crate::network::Tensor::<$prod * $first, [f64; $first]> {
+            data: [0.; $prod * $first]
         }
     };
-}
 
+}
 
 // pub struct Tensor<const N: usize, const I: [usize; N]> {
 //     data: [f64; N],
@@ -153,30 +162,30 @@ impl<
         }
     }
 
-    pub fn forward(&self, input: &[f32], output: &mut [f32])
-    // where
-    //     I: AsRef<[f32; N]>,
-    {
-        let out_h = IH - H + 1;
-        let out_w = IW - W + 1;
+    // pub fn forward(&self, input: &[f32], output: &mut [f32])
+    // // where
+    // //     I: AsRef<[f32; N]>,
+    // {
+    //     let out_h = IH - H + 1;
+    //     let out_w = IW - W + 1;
 
-        for oc in 0..OC {
-            for ic in 0..IC {
-                for x in 0..out_w {
-                    for y in 0..out_h {
-                        let mut val = 0.;
-                        for ix in (x * S + W / 2)..() {
-                            for iy in (y * S + H / 2)..() {
-                                val += self.data[oc].0[ic][x][y] * input[];
-                            }
-                        }
-                        output[oc * IC * out_w * out_h + ic * out_w * out_h + x * out_h + y] =
-                            val;
-                    }
-                }
-            }
-        }
-    }
+    //     for oc in 0..OC {
+    //         for ic in 0..IC {
+    //             for x in 0..out_w {
+    //                 for y in 0..out_h {
+    //                     let mut val = 0.;
+    //                     for ix in (x * S + W / 2)..() {
+    //                         for iy in (y * S + H / 2)..() {
+    //                             val += self.data[oc].0[ic][x][y] * input[];
+    //                         }
+    //                     }
+    //                     output[oc * IC * out_w * out_h + ic * out_w * out_h + x * out_h + y] =
+    //                         val;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 }
 
 // Forward pass implementation for ReLU
