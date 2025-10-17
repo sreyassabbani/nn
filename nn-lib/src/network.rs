@@ -21,10 +21,10 @@ pub struct Sigmoid<const N: usize>;
 // pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
 #[derive(Debug, Clone, Default)]
 pub struct Filter<const H: usize, const W: usize, const D: usize>(
-    Tensor<{ H * W * D }, shape_ty!(H, W, D)>,
+    Tensor<{ H * W * D }, shape_ty!(H, W, D), index_ty!(H, W, D)>,
 )
 where
-    Tensor<{ H * W * D }, shape_ty!(H, W, D)>: Sized; // current limitation of compiler's const generic features
+    Tensor<{ H * W * D }, shape_ty!(H, W, D), index_ty!(H, W, D)>: Sized; // current limitation of compiler's const generic features
 
 /// A convolutional layer
 ///
@@ -45,7 +45,7 @@ pub struct Conv<
     const S: usize,
     const P: usize,
 > where
-    Tensor<{ H * W * IC }, shape_ty!(H, W, IC)>: Sized,
+    Tensor<{ H * W * IC }, shape_ty!(H, W, IC), index_ty!(H, W, IC)>: Sized,
 {
     data: [Filter<H, W, IC>; OC],
 }
@@ -62,7 +62,7 @@ impl<
     const P: usize,
 > Conv<IW, IH, IC, H, W, OC, S, P>
 where
-    Tensor<{ H * W * IC }, shape_ty!(H, W, IC)>: Sized,
+    Tensor<{ H * W * IC }, shape_ty!(H, W, IC), index_ty!(H, W, IC)>: Sized,
 {
     pub fn init() -> Self {
         Conv {
@@ -97,8 +97,8 @@ where
                                     let input_idx = ic * IH * IW + actual_y * IW + actual_x;
                                     let filter_idx = ky * W * IC + kx * IC + ic;
 
-                                    sum +=
-                                        self.data[oc].0.data[filter_idx] as f32 * input[input_idx];
+                                    // sum +=
+                                    //     self.data[oc].0.data[filter_idx] as f32 * input[input_idx];
                                 }
                             }
                         }
