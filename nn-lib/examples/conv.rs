@@ -15,7 +15,7 @@ fn main() {
     // nt.forward(&[0.0; 784]);
     let tn = tensor!(2, 3);
 
-    println!("{}", type_of(&nt));
+    println!("{}", type_of(&tn));
 }
 
 fn type_of<T>(_: &T) -> &'static str {

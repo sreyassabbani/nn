@@ -41,9 +41,18 @@ pub struct Conv<
 #[derive(Debug, Copy, Clone)]
 pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
 
-pub struct Tensor<const N: usize, I> {
+pub struct Tensor<const N: usize, Shape> {
     data: [f64; N],
-    _index_marker: PhantomData<I>,
+    _shape_marker: PhantomData<Shape>,
+}
+
+impl<const N: usize, Shape> Tensor<N, Shape> {
+    pub fn new() -> Self {
+        Self {
+            data: [0.0f64; N],
+            _shape_marker: PhantomData,
+        }
+    }
 }
 
 // tensor!(2, 3) = Tensor<[[f64; 2]; 3]>
@@ -77,27 +86,20 @@ pub struct Tensor<const N: usize, I> {
 // }
 
 #[macro_export]
-macro_rules! tensor {
+macro_rules! shape_ty {
     ($d:expr) => {
-        $crate::network::Tensor<$d, [f64; $d]> {
-            data: [0.; $d]
-        }
+        [f64; $d]
     };
-
     ($first:expr, $($rest:expr),+ $(,)?) => {
-        $crate::tensor!($first, [$($rest),+; $first])
+        [$crate::shape_ty!($($rest),+); $first]
     };
+}
 
-    (@build $prod:expr, $first:expr, $($rest:expr),+ $(,)?) => {
-        $crate::tensor!(@build $prod * $first, [$($rest),+; $first])
+#[macro_export]
+macro_rules! tensor {
+    ($first:expr $(, $rest:expr)* $(,)?) => {
+        $crate::network::Tensor::<{ $first $( * $rest )* }, $crate::shape_ty!($first $(, $rest)*)>::new()
     };
-
-    (@build $prod:expr, $first:expr $(,)?) => {
-        $crate::network::Tensor::<$prod * $first, [f64; $first]> {
-            data: [0.; $prod * $first]
-        }
-    };
-
 }
 
 // pub struct Tensor<const N: usize, const I: [usize; N]> {
