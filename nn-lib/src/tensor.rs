@@ -57,20 +57,8 @@ macro_rules! shape_ty {
 
 #[macro_export]
 macro_rules! index_ty {
-    ($discard:expr) => {
-        (usize)
-    };
-
-    ($discard:expr, $($rest:expr),+ $(,)?) => {
-        $crate::index_ty!(@acc [usize,] $($rest),+)
-    };
-
-    (@acc [$($rec:tt)*] $discard:expr, $($rest:expr),+) => {
-        $crate::index_ty!(@acc [$($rec)* usize,] $($rest),+)
-    };
-
-    (@acc [$($rec:tt)*] $discard:expr) => {
-        ($($rec)* usize)
+    ($($item:expr),* $(,)?) => {
+        [usize; [$(stringify!($item)),*].len()]
     };
 }
 
