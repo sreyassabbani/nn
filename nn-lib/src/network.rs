@@ -41,36 +41,81 @@ pub struct Conv<
 #[derive(Debug, Copy, Clone)]
 pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
 
-// pub struct Tensor<const N: usize, I> {
+pub struct Tensor<D> {
+    data: D,
+}
+
+// tensor!(2, 3) = Tensor<[[f64; 2]; 3]>
+// 
+
+// #[macro_export]
+// macro_rules! tensor {
+//     ($n:expr, $($rest:tt)*) => {
+//         {
+//             $crate::tensor! {
+//                 @build
+//                 [f64; $n],
+//                 $($rest)*
+//             }
+//         }
+//     };
+
+//     (@build $($dims:tt)*, $d:expr, $($rest:tt)*) => {
+//         tensor! {
+//             @build
+//             [$($dims)*; $d],
+//             $($rest)*
+//         }
+//     };
+
+//     (@build $($dims:tt)*,) => {
+//         Tensor<$($dims)*> {
+//             data: 
+//         }
+//     };
+// }
+
+#[macro_export]
+macro_rules! tensor {
+    ($d:expr) => {
+        $crate::network::Tensor<[f64; $d]> {
+            data: 
+        }
+    };
+
+    ($first:expr, $($rest:expr),+ $(,)?) => {
+        $crate::network::Tensor<[$crate::tensor!($($rest),+); $first]> {
+            data: 
+        }
+    };
+}
+
+
+// pub struct Tensor<const N: usize, const I: [usize; N]> {
 //     data: [f64; N],
 //     _index_marker: PhantomData<I>
 // }
 
-pub struct Tensor<const N: usize, const I: [usize; N]> {
-    data: [f64; N],
-    _index_marker: PhantomData<I>
-}
+// impl<D> ops::Index<I> for Tensor<D> {
+//     type Output = f64;
+//     fn index(&self, index: I) -> &Self::Output {
+//         &3.
+//     }
+// }
 
-impl<const N: usize, I> ops::Index<I> for Tensor<N, I> {
-    type Output = f64;
-    fn index(&self, index: I) -> &Self::Output {
-        &3.
-    }
-}
+// impl<D> Tensor<D> {
+//     pub const fn reshape<IR>(self, dim: IR) -> Tensor<N, IR>
+//     where IR: IntoIterator
+//     {
 
-impl<const N: usize, const I: [usize; N]> Tensor<N, I> {
-    pub const fn reshape<IR>(self, dim: IR) -> Tensor<N, IR>
-    where IR: Iterator
-    {
-
-        let Tensor { data, .. } = self;
-        assert_eq!(dim.iter().product(), I.iter().product());
-        Tensor {
-            data,
-            _index_marker: PhantomData,
-        }
-    }
-}
+//         let Tensor { data, .. } = self;
+//         assert_eq!(dim.into_iter().product(), I.iter().product());
+//         Tensor {
+//             data,
+//             _index_marker: PhantomData,
+//         }
+//     }
+// }
 
 // pub struct Tensor<const N: usize, const D: usize> {
 //     data: [f64; N],

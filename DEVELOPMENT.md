@@ -73,3 +73,5 @@ Looking at both requirements at the same time, we could do either:
 1a.`Tensor<[1, 2, 3]>` 
 2. `Tensor<20>` with `TensorView<(1, 2, 3)>`
   - Combining two tensors must be done via a `TensorView` (this is the only way while preventing ambiguity).
+
+We might have to stick with a fully generic `Tensor<I>`
