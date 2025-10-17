@@ -6,6 +6,11 @@
 // proc macro
 pub use nn_macros::network;
 
+#[macro_use]
+mod tensor;
+
+pub use tensor::Tensor;
+
 // helper stuff for proc macro
 pub mod network;
 

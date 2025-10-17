@@ -1,5 +1,7 @@
 use std::{array, marker::PhantomData, ops};
 
+use crate::tensor::Tensor;
+
 // Define the DenseLayer struct with weights and biases
 #[derive(Debug)]
 pub struct DenseLayer<const IN: usize, const OUT: usize> {
@@ -15,108 +17,20 @@ pub struct ReLU<const N: usize>;
 #[derive(Debug)]
 pub struct Sigmoid<const N: usize>;
 
-#[derive(Debug, Clone)]
-pub struct Tensor<const N: usize, Shape> {
-    data: [f64; N],
-    _shape_marker: PhantomData<Shape>,
-}
+struct Te<const H: usize, const W: usize, const D: usize>(
+    pub Tensor<{ H * W * D }, shape_ty!(H, W, D)>,
+)
+where
+    Tensor<{ H * W * D }, shape_ty!(H, W, D)>: Sized;
 
-impl<const N: usize, Shape> Tensor<N, Shape> {
-    pub fn new() -> Self {
-        Self {
-            data: [0.; N],
-            _shape_marker: PhantomData,
-        }
-    }
-}
-
-impl<const N: usize, Shape> Default for Tensor<N, Shape> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[macro_export]
-macro_rules! shape_ty {
-    ($d:expr) => {
-        [f64; $d]
-    };
-    ($first:expr, $($rest:expr),+ $(,)?) => {
-        [$crate::shape_ty!($($rest),+); $first]
-    };
-}
-
-// left-fold shape_ty
-//
-// #[macro_export]
-// macro_rules! shape_ty {
-//     ($d:expr) => {
-//         [f64; $d]
-//     };
-
-//     ($first:expr, $($rest:expr),+ $(,)?) => {
-//         $crate::shape_ty!(@acc [f64; $first] $(, $rest)+)
-//     };
-
-//     (@acc $acc:ty, $next:expr) => {
-//         [$acc; $next]
-//     };
-
-//     (@acc $acc:ty, $next:expr, $($rest:expr),+ $(,)?) => {
-//         $crate::shape_ty!(@acc [$acc; $next] $(, $rest)+)
-//     };
-// }
-
-#[macro_export]
-macro_rules! tensor {
-    ($first:expr $(, $rest:expr)* $(,)?) => {
-        {
-            const N: usize = $first $( * $rest )*;
-            type Shape = $crate::shape_ty!($first $(, $rest)*);
-
-            <$crate::network::Tensor::<N, Shape>>::new()
-        }
-    };
-}
-
-// impl<D> ops::Index<I> for Tensor<D> {
-//     type Output = f64;
-//     fn index(&self, index: I) -> &Self::Output {
-//         &3.
-//     }
-// }
-
-// impl<D> Tensor<D> {
-//     pub const fn reshape<IR>(self, dim: IR) -> Tensor<N, IR>
-//     where IR: IntoIterator
-//     {
-
-//         let Tensor { data, .. } = self;
-//         assert_eq!(dim.into_iter().product(), I.iter().product());
-//         Tensor {
-//             data,
-//             _index_marker: PhantomData,
-//         }
-//     }
-// }
-
-// pub struct Tensor<const N: usize, const D: usize> {
-//     data: [f64; N],
-//     shape: [usize; D] // i would really like this to be part of the type...
-// }
-
-// impl<const N: usize, const D: usize> ops::Index<[usize; D]> for Tensor<N, D> {
-//     type Output = f64;
-//     fn index(&self, index: [usize; D]) -> &Self::Output {
-//         &3.
-//     }
-// }
-
-// impl<const N: usize, const D: usize> Tensor<N, D> {
-//     fn reshape(&mut self, shape: [usize; D]) {
-//         self.shape = shape;
-//     }
-// }
+// height, width, and depth (input channel size)
+// pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
+#[derive(Debug, Clone, Default)]
+pub struct Filter<const H: usize, const W: usize, const D: usize>(
+    pub Tensor<{ H * W * D }, shape_ty!(H, W, D)>,
+)
+where
+    Tensor<{ H * W * D }, shape_ty!(H, W, D)>: Sized;
 
 /// A convolutional layer
 ///
@@ -137,19 +51,10 @@ pub struct Conv<
     const S: usize,
     const P: usize,
 > where
-    [(); H * W * IC]:,
+    Tensor<{ H * W * IC }, shape_ty!(H, W, IC)>: Sized,
 {
     data: [Filter<H, W, IC>; OC],
 }
-
-// height, width, and depth (input channel size)
-// pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
-#[derive(Debug, Clone, Default)]
-pub struct Filter<const H: usize, const W: usize, const D: usize>(
-    pub Tensor<{ H * W * D }, crate::shape_ty!(H, W, D)>,
-)
-where
-    [(); H * W * D]:;
 
 // Forward pass implementation for Conv
 impl<
@@ -163,12 +68,23 @@ impl<
     const P: usize,
 > Conv<IW, IH, IC, H, W, OC, S, P>
 where
-    [(); H * W * IC]:,
+    Tensor<{ H * W * IC }, shape_ty!(H, W, IC)>: Sized,
 {
+    // pub fn init() -> Self {
+    //     let mut data: [Filter<H, W, IC>; OC] = unsafe {
+    //         // Safe because we initialize immediately and Filter is Copy
+    //         std::mem::MaybeUninit::uninit().assume_init()
+    //     };
+
+    //     for item in &mut data {
+    //         *item = Filter::default();
+    //     }
+
+    //     Conv { data }
+    // }
+
     pub fn init() -> Self {
         Conv {
-            // data: [Filter([[[0.; H]; W]; IC]); OC],
-            // data: [const { Filter(tensor!(H, W, IC)) }; OC],
             data: array::from_fn(|_| Filter::default()),
         }
     }

@@ -16,6 +16,12 @@ fn main() {
     let tn = tensor!(2, 3);
 
     println!("{}", type_of(&tn));
+
+    let c = nn::network::Conv::<2, 2, 2, 2, 2, 2, 0, 0>::init();
+
+    dbg!(&c);
+
+    // let tne = nn::network::Te<>;
 }
 
 fn type_of<T>(_: &T) -> &'static str {
