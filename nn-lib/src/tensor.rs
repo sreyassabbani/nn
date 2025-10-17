@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops};
+use std::{marker::PhantomData, mem::transmute, ops};
 
 #[derive(Debug, Clone)]
 pub struct Tensor<const N: usize, const D: usize, Shape> {
@@ -28,13 +28,60 @@ impl<const N: usize, const D: usize, Index> Tensor<N, D, Index> {
     }
 }
 
+macro_rules! nested_index {
+    ($data:expr, [$idx:expr]) => {
+        &$data[$idx]
+    };
+    ($data:expr, [$first:expr, $($rest:expr),*]) => {
+        nested_index!(&$data[$first], [$($rest),*])
+    };
+}
+
 impl<const N: usize, const D: usize, Shape> ops::Index<[usize; D]> for Tensor<N, D, Shape> {
     type Output = f64;
 
     fn index(&self, index: [usize; D]) -> &Self::Output {
-        &0.
+        unsafe {
+            let nested_data: &Shape = transmute(&self.data);
+            nested_index!(nested_data, index)
+        }
     }
 }
+
+// #[macro_export]
+// macro_rules! eidx {
+//     ($tensor:expr, [$($rest:expr),*]) => {
+//         $tensor$([$rest])*
+//     };
+// }
+
+// impl<const N: usize, const D: usize, Shape> ops::Index<[usize; D]> for Tensor<N, D, Shape> {
+//     type Output = f64;
+
+//     fn index(&self, index: [usize; D]) -> &Self::Output {
+//         // unsafe {
+//         //     index
+//         //         .iter()
+//         //         .fold(transmute::<[f64; N], Shape>(self.data), |acc, x| acc[x])
+//         // }
+
+//         // eidx!(self.data, index)
+
+//         Tensor {
+//             data: self.data[// modify something here],
+//             _shape_marker: PhantomData
+//         }[index[1..]]
+//     }
+// }
+
+// index recursion base case
+// impl<const N: usize, Shape> ops::Index<[usize; 1]> for Tensor<N, 1, Shape> {
+//     type Output = f64;
+
+//     fn index(&self, index: [usize; 1]) -> &Self::Output {
+//         self.data[index[0]]
+//     }
+// }
 
 impl<const N: usize, const D: usize, Shape> Default for Tensor<N, D, Shape> {
     fn default() -> Self {
@@ -66,6 +113,7 @@ macro_rules! tensor {
         {
             // number of elements
             const N: usize = $first $( * $rest )*;
+
             // dimension
             const D: usize = $crate::__dim_ty!($first $( * $rest )*);
 

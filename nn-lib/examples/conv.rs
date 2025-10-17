@@ -2,16 +2,25 @@
 
 use std::f64::consts::PI;
 
-use nn::graph;
-use nn::network as nt;
+use nn::network::Conv;
 use nn::tensor;
 
 fn main() {
-    let tn = tensor!(2, 3);
+    let tn = tensor!(2, 3, 89, 1, 1, 2, 3, 4);
 
     println!("{}", type_of(&tn));
 
-    let c = nn::network::Conv::<2, 2, 2, 2, 2, 2, 0, 0>::init();
+    #[rustfmt::skip]
+    let c = Conv::<
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        0,
+        0
+    >::init();
 
     dbg!(&c);
 }
