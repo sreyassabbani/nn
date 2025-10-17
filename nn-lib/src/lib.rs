@@ -1,4 +1,5 @@
 #![feature(generic_arg_infer)]
+#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 // proc macro

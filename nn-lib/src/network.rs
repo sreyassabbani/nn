@@ -15,32 +15,7 @@ pub struct ReLU<const N: usize>;
 #[derive(Debug)]
 pub struct Sigmoid<const N: usize>;
 
-/// A convolutional layer
-///
-/// `H` - filter/kernel height
-/// `W` - filter/kernel width
-/// `IC` - number of input channels
-/// `OC` - number of output channels (equivalently, number of kernels/filters)
-/// `S` - stride
-/// `P` - padding
-#[derive(Debug)]
-pub struct Conv<
-    const IW: usize,
-    const IH: usize,
-    const IC: usize,
-    const H: usize,
-    const W: usize,
-    const OC: usize,
-    const S: usize,
-    const P: usize,
-> {
-    data: [Filter<H, W, IC>; OC],
-}
-
-// height, width, and depth (input channel size)
-#[derive(Debug, Copy, Clone)]
-pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
-
+#[derive(Debug, Clone)]
 pub struct Tensor<const N: usize, Shape> {
     data: [f64; N],
     _shape_marker: PhantomData<Shape>,
@@ -49,41 +24,11 @@ pub struct Tensor<const N: usize, Shape> {
 impl<const N: usize, Shape> Tensor<N, Shape> {
     pub fn new() -> Self {
         Self {
-            data: [0.0f64; N],
+            data: [0.; N],
             _shape_marker: PhantomData,
         }
     }
 }
-
-// tensor!(2, 3) = Tensor<[[f64; 2]; 3]>
-//
-
-// #[macro_export]
-// macro_rules! tensor {
-//     ($n:expr, $($rest:tt)*) => {
-//         {
-//             $crate::tensor! {
-//                 @build
-//                 [f64; $n],
-//                 $($rest)*
-//             }
-//         }
-//     };
-
-//     (@build $($dims:tt)*, $d:expr, $($rest:tt)*) => {
-//         tensor! {
-//             @build
-//             [$($dims)*; $d],
-//             $($rest)*
-//         }
-//     };
-
-//     (@build $($dims:tt)*,) => {
-//         Tensor<$($dims)*> {
-//             data:
-//         }
-//     };
-// }
 
 #[macro_export]
 macro_rules! shape_ty {
@@ -95,17 +40,38 @@ macro_rules! shape_ty {
     };
 }
 
+// left-fold shape_ty
+//
+// #[macro_export]
+// macro_rules! shape_ty {
+//     ($d:expr) => {
+//         [f64; $d]
+//     };
+
+//     ($first:expr, $($rest:expr),+ $(,)?) => {
+//         $crate::shape_ty!(@acc [f64; $first] $(, $rest)+)
+//     };
+
+//     (@acc $acc:ty, $next:expr) => {
+//         [$acc; $next]
+//     };
+
+//     (@acc $acc:ty, $next:expr, $($rest:expr),+ $(,)?) => {
+//         $crate::shape_ty!(@acc [$acc; $next] $(, $rest)+)
+//     };
+// }
+
 #[macro_export]
 macro_rules! tensor {
     ($first:expr $(, $rest:expr)* $(,)?) => {
-        $crate::network::Tensor::<{ $first $( * $rest )* }, $crate::shape_ty!($first $(, $rest)*)>::new()
+        {
+            const N: usize = $first $( * $rest )*;
+            type Shape = $crate::shape_ty!($first $(, $rest)*);
+
+            <$crate::network::Tensor::<N, Shape>>::new()
+        }
     };
 }
-
-// pub struct Tensor<const N: usize, const I: [usize; N]> {
-//     data: [f64; N],
-//     _index_marker: PhantomData<I>
-// }
 
 // impl<D> ops::Index<I> for Tensor<D> {
 //     type Output = f64;
@@ -146,6 +112,39 @@ macro_rules! tensor {
 //     }
 // }
 
+/// A convolutional layer
+///
+/// `H` - filter/kernel height
+/// `W` - filter/kernel width
+/// `IC` - number of input channels
+/// `OC` - number of output channels (equivalently, number of kernels/filters)
+/// `S` - stride
+/// `P` - padding
+#[derive(Debug)]
+pub struct Conv<
+    const IW: usize,
+    const IH: usize,
+    const IC: usize,
+    const H: usize,
+    const W: usize,
+    const OC: usize,
+    const S: usize,
+    const P: usize,
+> where
+    [(); H * W * IC]:,
+{
+    data: [Filter<H, W, IC>; OC],
+}
+
+// height, width, and depth (input channel size)
+// pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
+#[derive(Debug, Clone)]
+pub struct Filter<const H: usize, const W: usize, const D: usize>(
+    pub Tensor<{ H * W * D }, crate::shape_ty!(H, W, D)>,
+)
+where
+    [(); H * W * D]:;
+
 // Forward pass implementation for Conv
 impl<
     const IW: usize,
@@ -157,12 +156,15 @@ impl<
     const S: usize,
     const P: usize,
 > Conv<IW, IH, IC, H, W, OC, S, P>
+where
+    [(); H * W * IC]:,
 {
-    pub fn init() -> Self {
-        Conv {
-            data: [Filter([[[0.; H]; W]; IC]); OC],
-        }
-    }
+    // pub fn init() -> Self {
+    //     Conv {
+    //         // data: [Filter(tensor!(H, W, IC)); OC],
+    //         data: [Filter([[[0.; H]; W]; IC]); OC],
+    //     }
+    // }
 
     // pub fn forward(&self, input: &[f32], output: &mut [f32])
     // // where
