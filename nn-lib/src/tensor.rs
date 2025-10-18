@@ -38,7 +38,7 @@ where
     fn index(&self, index: usize) -> &Self::Output {
         println!("{:?}", type_name::<Shape>());
         dbg!(&self.data);
-        &(unsafe { transmute_unchecked::<&Rc<[f64; N]>, &Shape>(&self.data) })[index]
+        &(unsafe { transmute_unchecked::<&[f64; N], &Shape>(&*self.data) })[index]
     }
 }
 
