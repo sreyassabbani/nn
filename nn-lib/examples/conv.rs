@@ -6,9 +6,10 @@ use nn::network::Conv;
 use nn::tensor;
 
 fn main() {
-    let tn = tensor!(2, 3, 89, 1, 1, 2, 3, 4);
+    let tn = tensor!(2, 3, 89, 2, 2, 2, 3, 4);
 
     println!("{}", type_of(&tn));
+    println!("{}", tn[[1, 1, 1, 1, 1, 1, 1, 1]]);
 
     #[rustfmt::skip]
     let c = Conv::<
