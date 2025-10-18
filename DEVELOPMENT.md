@@ -75,3 +75,30 @@ Looking at both requirements at the same time, we could do either:
   - Combining two tensors must be done via a `TensorView` (this is the only way while preventing ambiguity).
 
 We might have to stick with a fully generic `Tensor<I>`
+
+---
+
+>[!NOTE] Oct 17: The compiler seems to not be powerful enough to deduce that `Tensor<{ H * W * D }, _>` is sized, so I'm adding in `where Tensor<{ H * W * D }, _>: Sized` clauses in most places. Also, sidenote: this where clause explains the other cryptic where clause I pointed out in a commit message yesterday.
+
+>[!NOTE] Oct 17: In the current implementation of `tensor!`, you get a stack overflow message; however, this is not due to nested macro expansion but actually is a problem _at runtime_ - allocation! As everything is stack allocated, it shouldn't be a surprise `tensor!(2, 3, 89, 200, 20)` overflows the stack but `tensor!(2, 3, 89, 2, 2, 4, 9)` doesn't. Should I just turn every `[T; N]` into a `Box<[T; N]`?
+
+>[!NOTE] Oct 17: So I gave up implementing `Index<[usize; D]> for Tensor<N, D, Shape>` for now.
+
+
+
+### Oct 18
+When attempting to return ..., the `ops::Index` trait only allows for indexing that returns a `&Self::Output`, so you can't return a reference-counted
+
+```rs
+impl<const N: usize, const D: usize, Shape> ops::Index<usize> for Tensor<N, D, Shape>
+where
+    Shape: ops::Index<usize>,
+    <Shape as ops::Index<usize>>::Output: Sized,
+{
+    type Output = <Shape as ops::Index<usize>>::Output;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        (unsafe { transmute::<&[f64], Shape>(&self.data) })[index]
+    }
+}
+```

@@ -1,4 +1,5 @@
 #![feature(generic_const_exprs)]
+#![feature(core_intrinsics)]
 #![feature(generic_const_items)]
 #![allow(incomplete_features)]
 
