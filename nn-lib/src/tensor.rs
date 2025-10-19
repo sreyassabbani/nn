@@ -1,4 +1,11 @@
-use std::{any::type_name, intrinsics::transmute_unchecked, marker::PhantomData, ops, rc::Rc};
+use std::ptr;
+#[rustfmt::skip]
+use std::{
+    intrinsics::transmute_unchecked,
+    marker::PhantomData,
+    ops,
+    rc::Rc
+};
 
 #[derive(Debug, Clone)]
 pub struct Tensor<const N: usize, const D: usize, Shape> {
@@ -6,7 +13,11 @@ pub struct Tensor<const N: usize, const D: usize, Shape> {
     _shape_marker: PhantomData<Shape>,
 }
 
-impl<const N: usize, const D: usize, Index> Tensor<N, D, Index> {
+impl<const N: usize, const D: usize, Shape> Tensor<N, D, Shape>
+where
+    Shape: ops::Index<usize>,
+    <Shape as ops::Index<usize>>::Output: Sized + ArraySize,
+{
     pub fn new() -> Self {
         Self {
             data: Rc::new([0.; N]),
@@ -26,9 +37,62 @@ impl<const N: usize, const D: usize, Index> Tensor<N, D, Index> {
             _shape_marker: PhantomData::<AltShp>,
         }
     }
+
+    pub fn get(
+        &self,
+        index: usize,
+    ) -> Tensor<
+        { <<Shape as ops::Index<usize>>::Output as ArraySize>::SIZE },
+        { D - 1 },
+        <Shape as ops::Index<usize>>::Output,
+    >
+    where
+        <Shape as ops::Index<usize>>::Output: Sized,
+    {
+        unsafe {
+            let t_data = &transmute_unchecked::<&[f64; N], &Shape>(&*self.data)[index];
+
+            let ptr = t_data as *const _ as *const f64;
+            let data_arr: [f64; <<Shape as ops::Index<usize>>::Output as ArraySize>::SIZE] =
+                ptr::read(ptr as *const _);
+
+            Tensor {
+                data: Rc::new(data_arr),
+                _shape_marker: PhantomData,
+            }
+        }
+    }
+
+    pub fn at(&self, index: [usize; D]) -> f64
+    where
+        Tensor<
+            { <<Shape as ops::Index<usize>>::Output as ArraySize>::SIZE },
+            { D - 1 },
+            <Shape as ops::Index<usize>>::Output,
+        >: Sized,
+        <Shape as ops::Index<usize>>::Output: ops::Index<usize> + ArraySize,
+        <<Shape as ops::Index<usize>>::Output as ops::Index<usize>>::Output:
+            Sized + ArraySize + ops::Index<usize>,
+        <Shape as ops::Index<usize>>::Output: Sized,
+    {
+        if D == 1 {
+            self.data[index[0]]
+        } else {
+            unsafe {
+                let first = index[0];
+                // Transmute &[usize] to &[usize; D-1]
+                let rest: [usize; D - 1] =
+                    std::ptr::read(index[1..].as_ptr() as *const [usize; D - 1]);
+
+                self.get(first).at(rest)
+            }
+        }
+    }
+
+    pub fn slice<T: Iterator>(range: T) {}
 }
 
-trait ArraySize {
+pub trait ArraySize {
     const SIZE: usize;
 }
 
@@ -42,91 +106,11 @@ impl<T: ArraySize, const N: usize> ArraySize for [T; N] {
     const SIZE: usize = N * T::SIZE;
 }
 
-impl<const N: usize, const D: usize, Shape> ops::Index<usize> for Tensor<N, D, Shape>
+impl<const N: usize, const D: usize, Shape> Default for Tensor<N, D, Shape>
 where
     Shape: ops::Index<usize>,
     <Shape as ops::Index<usize>>::Output: Sized + ArraySize,
-    Tensor<
-        { <<Shape as ops::Index<usize>>::Output as ArraySize>::SIZE },
-        { D - 1 },
-        <Shape as ops::Index<usize>>::Output,
-    >: Sized,
 {
-    type Output = Tensor<
-        { <<Shape as ops::Index<usize>>::Output as ArraySize>::SIZE },
-        { D - 1 },
-        <Shape as ops::Index<usize>>::Output,
-    >;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        println!("{:?}", type_name::<Shape>());
-        dbg!(&self.data);
-        // let data = &(unsafe { transmute_unchecked::<&[f64; N], &Shape>(&*self.data) })[index];
-        let data = unsafe {
-            transmute_unchecked(transmute_unchecked::<&[f64; N], &Shape>(&*self.data)[index])
-        };
-
-        &Tensor {
-            data: Rc::new(data),
-            _shape_marker: PhantomData,
-        }
-    }
-}
-
-impl<const N: usize, const D: usize, Shape> ops::Index<[usize; D]> for Tensor<N, D, Shape>
-where
-    Shape: ops::Index<usize>,
-    <Shape as ops::Index<usize>>::Output: Sized,
-{
-    type Output = f64;
-
-    fn index(&self, index: [usize; D]) -> &Self::Output {
-        let rdata = unsafe { transmute_unchecked::<&[f64], Shape>(&self.data) };
-        let c = rdata;
-        for &iidx in index[..index.len() - 1].iter() {
-            let c = &c[iidx];
-        }
-        let c = &c[index[index.len() - 1]];
-        unsafe { transmute_unchecked::<Shape, &f64>(c) }
-    }
-}
-
-// #[macro_export]
-// macro_rules! eidx {
-//     ($tensor:expr, [$($rest:expr),*]) => {
-//         $tensor$([$rest])*
-//     };
-// }
-
-// impl<const N: usize, const D: usize, Shape> ops::Index<[usize; D]> for Tensor<N, D, Shape> {
-//     type Output = f64;
-
-//     fn index(&self, index: [usize; D]) -> &Self::Output {
-//         // unsafe {
-//         //     index
-//         //         .iter()
-//         //         .fold(transmute::<[f64; N], Shape>(self.data), |acc, x| acc[x])
-//         // }
-
-//         // eidx!(self.data, index)
-
-//         Tensor {
-//             data: self.data[// modify something here],
-//             _shape_marker: PhantomData
-//         }[index[1..]]
-//     }
-// }
-
-// index recursion base case
-// impl<const N: usize, Shape> ops::Index<[usize; 1]> for Tensor<N, 1, Shape> {
-//     type Output = f64;
-
-//     fn index(&self, index: [usize; 1]) -> &Self::Output {
-//         self.data[index[0]]
-//     }
-// }
-
-impl<const N: usize, const D: usize, Shape> Default for Tensor<N, D, Shape> {
     fn default() -> Self {
         Self::new()
     }

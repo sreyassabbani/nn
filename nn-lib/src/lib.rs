@@ -1,7 +1,8 @@
+#![allow(internal_features)]
+#![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 #![feature(core_intrinsics)]
 #![feature(generic_const_items)]
-#![allow(incomplete_features)]
 
 // proc macro
 pub use nn_macros::network;

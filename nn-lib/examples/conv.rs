@@ -9,8 +9,8 @@ fn main() {
     let tn = tensor!(2, 3);
 
     println!("{}", type_of(&tn));
-    println!("{:?}", tn[0]);
-    // println!("{}", tn[[1, 1, 1, 1, 1, 1, 1, 1]]);
+    println!("{:?}", tn.get(0));
+    println!("{}", tn.at([1, 1]));
 
     #[rustfmt::skip]
     let c = Conv::<
