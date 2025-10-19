@@ -62,7 +62,7 @@ Then, in the second stage, the following constants are generated, all extracted 
 ??? There is a lot of bypassing that is done especially around the Rust orphan rule by defining structs temporarily during the expansion of the macro.
 
 # Development of the `Tensor`
-Goals, like always, are to utilize as many zero-cost abstractions as possible, parse and not validate, etc.
+Goals, like [always](DESIGN.md), are to utilize as many zero-cost abstractions as possible, parse and not validate, etc.
 
 - I would like to keep the dimensions of the tensor part of the type information while also being extremely general. That is, I don't want to separately define (or even macro) `Tensor2x3` or `Tensor2x4x2`, etc. 
 - Moreover, I would like a convenient `reshape()` functionality. As we are going to store the tensor data contiguously, I would like to be able to create separate "indices/views" onto the tensor.

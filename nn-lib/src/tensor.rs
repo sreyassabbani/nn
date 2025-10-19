@@ -63,33 +63,70 @@ where
         }
     }
 
-    pub fn at(&self, index: [usize; D]) -> f64
-    where
-        Tensor<
-            { <<Shape as ops::Index<usize>>::Output as ArraySize>::SIZE },
-            { D - 1 },
-            <Shape as ops::Index<usize>>::Output,
-        >: Sized,
-        <Shape as ops::Index<usize>>::Output: ops::Index<usize> + ArraySize,
-        <<Shape as ops::Index<usize>>::Output as ops::Index<usize>>::Output:
-            Sized + ArraySize + ops::Index<usize>,
-        <Shape as ops::Index<usize>>::Output: Sized,
-    {
-        if D == 1 {
-            self.data[index[0]]
-        } else {
-            unsafe {
-                let first = index[0];
-                // Transmute &[usize] to &[usize; D-1]
-                let rest: [usize; D - 1] =
-                    std::ptr::read(index[1..].as_ptr() as *const [usize; D - 1]);
+    // pub fn at(&self, index: [usize; D]) -> f64
+    // where
+    //     Tensor<
+    //         { <<Shape as ops::Index<usize>>::Output as ArraySize>::SIZE },
+    //         { D - 1 },
+    //         <Shape as ops::Index<usize>>::Output,
+    //     >: Sized,
+    //     <Shape as ops::Index<usize>>::Output: ops::Index<usize> + ArraySize,
+    //     <<Shape as ops::Index<usize>>::Output as ops::Index<usize>>::Output:
+    //         Sized + ArraySize + ops::Index<usize>,
+    //     <Shape as ops::Index<usize>>::Output: Sized,
+    // {
+    //     if D == 1 {
+    //         self.data[index[0]]
+    //     } else {
+    //         unsafe {
+    //             let first = index[0];
+    //             // Transmute &[usize] to &[usize; D-1]
+    //             let rest: [usize; D - 1] =
+    //                 std::ptr::read(index[1..].as_ptr() as *const [usize; D - 1]);
 
-                self.get(first).at(rest)
-            }
-        }
-    }
+    //             self.get(first).at(rest)
+    //         }
+    //     }
+    // }
 
     pub fn slice<T: Iterator>(range: T) {}
+}
+
+pub trait GetFromIndex<const N: usize> {
+    fn at(&self, index: [usize; N]) -> &f64;
+}
+
+// Recursive case: nested arrays
+impl<T, const M: usize, const N: usize> GetFromIndex<N> for [T; M]
+where
+    T: GetFromIndex<{ N - 1 }>,
+{
+    default fn at(&self, index: [usize; N]) -> &f64 {
+        self[index[0]].at(core::array::from_fn(|i| index[i + 1]))
+    }
+}
+
+// Base case: 1D array
+impl<const M: usize> GetFromIndex<1> for [f64; M] {
+    fn at(&self, index: [usize; 1]) -> &f64 {
+        &self[index[0]]
+    }
+}
+
+impl GetFromIndex<0> for f64 {
+    fn at(&self, index: [usize; 0]) -> &f64 {
+        self
+    }
+}
+
+// Implement on Tensor - the key is that T must implement GetFromIndex<D>
+impl<const N: usize, const M: usize, const D: usize, T> GetFromIndex<D> for Tensor<N, D, [T; M]>
+where
+    [T; M]: GetFromIndex<D>,
+{
+    fn at(&self, index: [usize; D]) -> &f64 {
+        unsafe { transmute_unchecked::<&[f64; N], &[T; M]>(&*self.data) }.at(index)
+    }
 }
 
 pub trait ArraySize {

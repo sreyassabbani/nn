@@ -1,7 +1,7 @@
 While iterating and refactoring this project, I had the following in mind.
 
 ## Overview of Goals and Philosophy
-- Strong Type Safety: Leverage Rust's type system, const generics, and the typestate pattern to catch mismatches and human errors <ins>at compile time</ins>.
+- Strong Type Safety: Through Rust, leverage type-driven design features and patterns (const generics, zero-cost abstractions, typestate, etc) to catch mismatches and human errors <ins>at compile time</ins>; higly reflective of ["parse, don't validate"](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/).
 - Ergonomic API: Provide a <ins>clear and concise API</ins> for model construction, training, and testing.
 - Constrained Modularity: Allow legal mixing and matching of layers without committing to a rigid static pipeline.
 - Performance: Use <ins>zero-cost abstractions</ins>, heap-allocated (`Box`-ed) arrays, and row-major order data layout.
@@ -10,19 +10,15 @@ While iterating and refactoring this project, I had the following in mind.
 These were the main design philosophies I kept in mind through the project. For more detail, consult the remaining of this document.
 
 # Linear Algebra
-Since I wanted to make this project absolutely from the ground up, I would end up making some quick linear algebra utilities. Cumulatively, all of the linear algebra logic ended up taking less than 100 LOC.
+Since I wanted to make this project absolutely from the ground up, I would end up making some quick linear algebra utilities.
 
-Since I've already tortured myself with doing this from scratch before in [a raytracing project](https://github.com/sreyassabbani/ray-tracing-rs), this part was mostly quick.
-1. Store vectors and matrices in row-major order for <ins>cache-friendly access</ins>.
+1. Store vectors and matrices in row-major order for <ins>cache-friendly access</ins> during matrix-vector multiplication.
 2. Represent fixed-size arrays behind a `Box<[T; N]>` or `Box<[[T; N]; M]>` to <ins>minimize stack usage while retaining compile-time size checks</ins>.
-
-> Most of it was pretty general (pun?). Here's how matrices ending up looking.
 ```rs
 pub struct Matrix<T, const N: usize, const M: usize> {
   entries: Box<[[T; N]; M]>,
 }
 ```
-> The slightly harder part would be random matrix/vector generation. Luckily, I've done random vector generation before and didn't have to go through the pain of figuring out that I needed to call an RNG for every element, un-suggestive of syntax.
 3. Generate random vector and matrix using the `rand` crate.
 
 # API design

@@ -2,6 +2,7 @@
 
 use std::f64::consts::PI;
 
+use nn::GetFromIndex;
 use nn::network::Conv;
 use nn::tensor;
 
