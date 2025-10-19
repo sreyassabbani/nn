@@ -28,37 +28,68 @@ impl<const N: usize, const D: usize, Index> Tensor<N, D, Index> {
     }
 }
 
+trait ArraySize {
+    const SIZE: usize;
+}
+
+// Base case: f64 has "size" 1
+impl ArraySize for f64 {
+    const SIZE: usize = 1;
+}
+
+// Recursive case: [T; N] has size N * T::SIZE
+impl<T: ArraySize, const N: usize> ArraySize for [T; N] {
+    const SIZE: usize = N * T::SIZE;
+}
+
 impl<const N: usize, const D: usize, Shape> ops::Index<usize> for Tensor<N, D, Shape>
 where
     Shape: ops::Index<usize>,
-    <Shape as ops::Index<usize>>::Output: Sized,
+    <Shape as ops::Index<usize>>::Output: Sized + ArraySize,
+    Tensor<
+        { <<Shape as ops::Index<usize>>::Output as ArraySize>::SIZE },
+        { D - 1 },
+        <Shape as ops::Index<usize>>::Output,
+    >: Sized,
 {
-    type Output = <Shape as ops::Index<usize>>::Output;
+    type Output = Tensor<
+        { <<Shape as ops::Index<usize>>::Output as ArraySize>::SIZE },
+        { D - 1 },
+        <Shape as ops::Index<usize>>::Output,
+    >;
 
     fn index(&self, index: usize) -> &Self::Output {
         println!("{:?}", type_name::<Shape>());
         dbg!(&self.data);
-        &(unsafe { transmute_unchecked::<&[f64; N], &Shape>(&*self.data) })[index]
+        // let data = &(unsafe { transmute_unchecked::<&[f64; N], &Shape>(&*self.data) })[index];
+        let data = unsafe {
+            transmute_unchecked(transmute_unchecked::<&[f64; N], &Shape>(&*self.data)[index])
+        };
+
+        &Tensor {
+            data: Rc::new(data),
+            _shape_marker: PhantomData,
+        }
     }
 }
 
-// impl<const N: usize, const D: usize, Shape> ops::Index<[usize; D]> for Tensor<N, D, Shape>
-// where
-//     Shape: ops::Index<usize>,
-//     <Shape as ops::Index<usize>>::Output: Sized,
-// {
-//     type Output = f64;
+impl<const N: usize, const D: usize, Shape> ops::Index<[usize; D]> for Tensor<N, D, Shape>
+where
+    Shape: ops::Index<usize>,
+    <Shape as ops::Index<usize>>::Output: Sized,
+{
+    type Output = f64;
 
-//     fn index(&self, index: [usize; D]) -> &Self::Output {
-//         let rdata = unsafe { transmute_unchecked::<&[f64], Shape>(&self.data) };
-//         let c = rdata;
-//         for &iidx in index[..index.len() - 1].iter() {
-//             let c = &c[iidx];
-//         }
-//         let c = &c[index[index.len() - 1]];
-//         unsafe { transmute_unchecked::<Shape, &f64>(c) }
-//     }
-// }
+    fn index(&self, index: [usize; D]) -> &Self::Output {
+        let rdata = unsafe { transmute_unchecked::<&[f64], Shape>(&self.data) };
+        let c = rdata;
+        for &iidx in index[..index.len() - 1].iter() {
+            let c = &c[iidx];
+        }
+        let c = &c[index[index.len() - 1]];
+        unsafe { transmute_unchecked::<Shape, &f64>(c) }
+    }
+}
 
 // #[macro_export]
 // macro_rules! eidx {

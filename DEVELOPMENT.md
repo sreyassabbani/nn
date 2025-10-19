@@ -102,3 +102,18 @@ where
     }
 }
 ```
+
+On another note this day, the issues that make creating such an API so hard are the following features of Rust:
+
+- non-variadic (const) generic parameters (and subsequently no way to iterate over them)
+
+Due to this, I decided to encode shape information in three generic parameters: `const N: usize` and `const D: usize` and `Shape`.
+
+The reason for three parameters is because Rust offers no way to manipulate between one another once the tensor struct has been initialized. Exercise: try doing this (set a timer for a good 6 minutes). Exploiting that, I've decided to encode all valuable information at the time of constructing the tensor.
+
+While you are reading the following, make sure all of this makes sense logically to be part of a tensor's type (an example of something that shouldn't: actual data).
+
+1. `const N: usize` — how many elements in total the tensor must contain
+2. `const D: usize` — dimension of the tensor
+3. `Shape` — unrestricted generic parameter (examples: `[f64; 2]`, `[[[f64; 4]; 3]; 42]`)
+
