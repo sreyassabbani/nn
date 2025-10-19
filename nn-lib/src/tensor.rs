@@ -1,9 +1,9 @@
-use std::ptr;
 #[rustfmt::skip]
 use std::{
     intrinsics::transmute_unchecked,
     marker::PhantomData,
     ops,
+    ptr,
     rc::Rc
 };
 
@@ -63,33 +63,16 @@ where
         }
     }
 
-    // pub fn at(&self, index: [usize; D]) -> f64
-    // where
-    //     Tensor<
-    //         { <<Shape as ops::Index<usize>>::Output as ArraySize>::SIZE },
-    //         { D - 1 },
-    //         <Shape as ops::Index<usize>>::Output,
-    //     >: Sized,
-    //     <Shape as ops::Index<usize>>::Output: ops::Index<usize> + ArraySize,
-    //     <<Shape as ops::Index<usize>>::Output as ops::Index<usize>>::Output:
-    //         Sized + ArraySize + ops::Index<usize>,
-    //     <Shape as ops::Index<usize>>::Output: Sized,
-    // {
-    //     if D == 1 {
-    //         self.data[index[0]]
-    //     } else {
-    //         unsafe {
-    //             let first = index[0];
-    //             // Transmute &[usize] to &[usize; D-1]
-    //             let rest: [usize; D - 1] =
-    //                 std::ptr::read(index[1..].as_ptr() as *const [usize; D - 1]);
+    pub fn at(&self, index: [usize; D]) -> &f64
+    where
+        Shape: GetFromIndex<D>,
+    {
+        unsafe { transmute_unchecked::<&[f64; N], &Shape>(&*self.data) }.at(index)
+    }
 
-    //             self.get(first).at(rest)
-    //         }
-    //     }
-    // }
-
-    pub fn slice<T: Iterator>(range: T) {}
+    pub fn slice<T: Iterator>(range: T) {
+        todo!()
+    }
 }
 
 pub trait GetFromIndex<const N: usize> {
@@ -114,18 +97,8 @@ impl<const M: usize> GetFromIndex<1> for [f64; M] {
 }
 
 impl GetFromIndex<0> for f64 {
-    fn at(&self, index: [usize; 0]) -> &f64 {
+    fn at(&self, _index: [usize; 0]) -> &f64 {
         self
-    }
-}
-
-// Implement on Tensor - the key is that T must implement GetFromIndex<D>
-impl<const N: usize, const M: usize, const D: usize, T> GetFromIndex<D> for Tensor<N, D, [T; M]>
-where
-    [T; M]: GetFromIndex<D>,
-{
-    fn at(&self, index: [usize; D]) -> &f64 {
-        unsafe { transmute_unchecked::<&[f64; N], &[T; M]>(&*self.data) }.at(index)
     }
 }
 
