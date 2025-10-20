@@ -155,6 +155,35 @@ where
     }
 }
 
+// currently disallow adding two `&Tensor` because I need to overwrite one of them and also be able to own the `data` as I am dealing with `Box<[_; _]>`
+impl<const N: usize, const D: usize, Shape> ops::Add<&Tensor<N, D, Shape>> for Tensor<N, D, Shape> {
+    type Output = Tensor<N, D, Shape>;
+    fn add(mut self, rhs: &Tensor<N, D, Shape>) -> Self::Output {
+        for (i, v) in self.data.iter_mut().enumerate() {
+            *v += rhs.data[i];
+        }
+
+        Self::Output {
+            data: self.data,
+            _shape_marker: PhantomData,
+        }
+    }
+}
+
+impl<const N: usize, const D: usize, Shape> ops::Div<f64> for Tensor<N, D, Shape> {
+    type Output = Tensor<N, D, Shape>;
+    fn div(mut self, rhs: f64) -> Self::Output {
+        for v in self.data.iter_mut() {
+            *v /= rhs;
+        }
+
+        Self::Output {
+            data: self.data,
+            _shape_marker: PhantomData,
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! shape_ty {
     ($d:expr) => {

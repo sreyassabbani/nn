@@ -1,8 +1,7 @@
 #![allow(unused)]
 
-use nn::network::Conv;
+use nn::conv::{Conv, ConvIO};
 use nn::{Tensor, tensor};
-use std::any::type_name_of_val;
 
 fn main() {
     let mut tn = tensor!(2, 3);
@@ -17,7 +16,7 @@ fn main() {
     println!("{}", tn.at([1, 2]));
 
     #[rustfmt::skip]
-    let c = Conv::<
+    let mut c = Conv::<
         2,
         2,
         2,
@@ -28,16 +27,31 @@ fn main() {
         0
     >::init();
 
-    let mut out_space = c.create_output_space();
-    let input = Tensor::from([1.; 8])
-        .reshape::<<Conv<2, 2, 2, 2, 2, 2, 1, 0> as nn::network::ConvIO>::InputShape>();
+    let mut avg_out_space = c.create_output_space();
+    let mut cur_out_space = c.create_output_space();
 
-    dbg!(&c);
-    dbg!(&input);
+    let n = 200;
 
-    c.forward(&input, &mut out_space);
+    for _ in 0..n {
+        // re-randomize conv
+        c = Conv::init();
 
-    dbg!(&out_space);
+        let input =
+            Tensor::from([1.; 8]).reshape::<<Conv<2, 2, 2, 2, 2, 2, 1, 0> as ConvIO>::InputShape>();
+
+        // dbg!(&c);
+        // dbg!(&input);
+
+        c.forward(&input, &mut cur_out_space);
+
+        dbg!(&cur_out_space);
+
+        // add assign requires the first variable to be `&mut`, not an owned value (which is what we need/like; see `tensor.rs` comment)
+        avg_out_space = avg_out_space + &cur_out_space;
+    }
+
+    dbg!(avg_out_space / n as f64);
+    // fun fact: appears to converge to [[4.], [4.]]
 }
 
 // OUTPUT:
