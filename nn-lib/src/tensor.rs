@@ -4,13 +4,21 @@ use std::{
     marker::PhantomData,
     ops,
     ptr,
-    rc::Rc
 };
 
 #[derive(Debug, Clone)]
 pub struct Tensor<const N: usize, const D: usize, Shape> {
-    data: Rc<[f64; N]>,
-    _shape_marker: PhantomData<Shape>,
+    pub(crate) data: Box<[f64; N]>,
+    pub(crate) _shape_marker: PhantomData<Shape>,
+}
+
+impl<const N: usize, const D: usize> From<[f64; N]> for Tensor<N, D, [f64; N]> {
+    fn from(value: [f64; N]) -> Self {
+        Tensor {
+            data: Box::new(value),
+            _shape_marker: PhantomData,
+        }
+    }
 }
 
 impl<const N: usize, const D: usize, Shape> Tensor<N, D, Shape>
@@ -20,7 +28,7 @@ where
 {
     pub fn new() -> Self {
         Self {
-            data: Rc::new([0.; N]),
+            data: Box::new([0.; N]),
             _shape_marker: PhantomData,
         }
     }
@@ -29,7 +37,7 @@ where
     where
         Tensor<N, D, AltShp>: Sized,
     {
-        assert_eq!(size_of::<AltShp>(), N);
+        assert_eq!(size_of::<AltShp>(), N * size_of::<f64>());
         let Tensor { data, .. } = self;
 
         Tensor {
@@ -57,7 +65,7 @@ where
                 ptr::read(ptr as *const _);
 
             Tensor {
-                data: Rc::new(data_arr),
+                data: Box::new(data_arr),
                 _shape_marker: PhantomData,
             }
         }
@@ -70,6 +78,14 @@ where
         unsafe { transmute_unchecked::<&[f64; N], &Shape>(&*self.data) }.at(index)
     }
 
+    pub fn set(&mut self, index: [usize; D], value: f64)
+    where
+        Shape: GetFromIndexMut<D>,
+    {
+        *(unsafe { transmute_unchecked::<&mut [f64; N], &mut Shape>(&mut *self.data) }
+            .at_mut(index)) = value;
+    }
+
     pub fn slice<T: Iterator>(range: T) {
         todo!()
     }
@@ -77,6 +93,12 @@ where
 
 pub trait GetFromIndex<const N: usize> {
     fn at(&self, index: [usize; N]) -> &f64;
+}
+
+impl GetFromIndex<0> for f64 {
+    fn at(&self, _index: [usize; 0]) -> &f64 {
+        self
+    }
 }
 
 // Recursive case: nested arrays
@@ -89,16 +111,23 @@ where
     }
 }
 
-// Base case: 1D array
-impl<const M: usize> GetFromIndex<1> for [f64; M] {
-    fn at(&self, index: [usize; 1]) -> &f64 {
-        &self[index[0]]
+pub trait GetFromIndexMut<const N: usize> {
+    fn at_mut(&mut self, index: [usize; N]) -> &mut f64;
+}
+
+impl GetFromIndexMut<0> for f64 {
+    fn at_mut(&mut self, _index: [usize; 0]) -> &mut f64 {
+        self
     }
 }
 
-impl GetFromIndex<0> for f64 {
-    fn at(&self, _index: [usize; 0]) -> &f64 {
-        self
+// Recursive case: nested arrays
+impl<T, const M: usize, const N: usize> GetFromIndexMut<N> for [T; M]
+where
+    T: GetFromIndexMut<{ N - 1 }>,
+{
+    default fn at_mut(&mut self, index: [usize; N]) -> &mut f64 {
+        self[index[0]].at_mut(core::array::from_fn(|i| index[i + 1]))
     }
 }
 

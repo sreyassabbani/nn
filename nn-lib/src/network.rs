@@ -1,4 +1,4 @@
-use std::array;
+use std::{array, marker::PhantomData};
 
 use crate::tensor::Tensor;
 
@@ -19,17 +19,32 @@ pub struct Sigmoid<const N: usize>;
 
 // height, width, and depth (input channel size)
 // pub struct Filter<const H: usize, const W: usize, const D: usize>([[[f32; H]; W]; D]);
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Filter<const H: usize, const W: usize, const D: usize>(
     Tensor<{ H * W * D }, 3, shape_ty!(H, W, D)>,
 )
 where
     Tensor<{ H * W * D }, 3, shape_ty!(H, W, D)>: Sized; // current limitation of compiler's const generic features
 
+impl<const H: usize, const W: usize, const D: usize> Default for Filter<H, W, D>
+where
+    Tensor<{ H * W * D }, 3, shape_ty!(H, W, D)>: Sized,
+{
+    fn default() -> Self {
+        let mut arr = [0.; H * W * D];
+        rand::fill(&mut arr);
+
+        Self(Tensor {
+            data: Box::new(arr),
+            _shape_marker: PhantomData,
+        })
+    }
+}
+
 /// A convolutional layer
 ///
-/// `H` - filter/kernel height
-/// `W` - filter/kernel width
+/// `KH` - kernel/filter height
+/// `KW` - kernel/filter width
 /// `IC` - number of input channels
 /// `OC` - number of output channels (equivalently, number of kernels/filters)
 /// `S` - stride
@@ -39,30 +54,28 @@ pub struct Conv<
     const IW: usize,
     const IH: usize,
     const IC: usize,
-    const H: usize,
-    const W: usize,
+    const KH: usize,
+    const KW: usize,
     const OC: usize,
     const S: usize,
     const P: usize,
 > where
-    Tensor<{ H * W * IC }, 3, shape_ty!(H, W, IC)>: Sized,
+    Tensor<{ KH * KW * IC }, 3, shape_ty!(KH, KW, IC)>: Sized,
 {
-    data: [Filter<H, W, IC>; OC],
+    data: [Filter<KH, KW, IC>; OC],
 }
-
-// Forward pass implementation for Conv
 impl<
     const IW: usize,
     const IH: usize,
     const IC: usize,
-    const H: usize,
-    const W: usize,
+    const KH: usize,
+    const KW: usize,
     const OC: usize,
     const S: usize,
     const P: usize,
-> Conv<IW, IH, IC, H, W, OC, S, P>
+> Conv<IW, IH, IC, KH, KW, OC, S, P>
 where
-    Tensor<{ H * W * IC }, 3, shape_ty!(H, W, IC)>: Sized,
+    Tensor<{ KH * KW * IC }, 3, shape_ty!(KH, KW, IC)>: Sized,
 {
     pub fn init() -> Self {
         Conv {
@@ -70,46 +83,104 @@ where
         }
     }
 
-    pub fn forward(&self, input: &[f32], output: &mut [f32]) {
-        let out_h = (IH + 2 * P - H) / S + 1;
-        let out_w = (IW + 2 * P - W) / S + 1;
+    pub fn create_output_space(
+        &self,
+    ) -> Tensor<
+        { OC * ((IH + 2 * P - KH) / S + 1) * ((IW + 2 * P - KW) / S + 1) },
+        3,
+        shape_ty!(OC, (IH + 2 * P - KH) / S + 1, (IW + 2 * P - KW) / S + 1),
+    > {
+        Tensor::new()
+    }
 
-        // validate dimensions
-        assert_eq!(input.len(), IC * IH * IW);
-        assert_eq!(output.len(), OC * out_h * out_w);
+    pub fn forward(
+        &self,
+        input: &Tensor<{ IC * IH * IW }, 3, shape_ty!(IC, IH, IW)>,
+        output: &mut Tensor<
+            { OC * ((IH + 2 * P - KH) / S + 1) * ((IW + 2 * P - KW) / S + 1) },
+            3,
+            shape_ty!(OC, (IH + 2 * P - KH) / S + 1, (IW + 2 * P - KW) / S + 1),
+        >,
+    ) {
+        let out_h = (IH + 2 * P - KH) / S + 1;
+        let out_w = (IW + 2 * P - KW) / S + 1;
 
         for oc in 0..OC {
+            let filter = &self.data[oc].0; // Filter is Tensor<..., shape_ty!(KH, KW, IC)>
+
             for y in 0..out_h {
                 for x in 0..out_w {
                     let mut sum = 0.0;
 
                     // apply filter
-                    for ic in 0..IC {
-                        for ky in 0..H {
-                            for kx in 0..W {
-                                let in_y = y * S + ky;
-                                let in_x = x * S + kx;
+                    for ky in 0..KH {
+                        for kx in 0..KW {
+                            for ic in 0..IC {
+                                // calculate input position (accounting for stride)
+                                let in_y = (y * S + ky) as isize - P as isize;
+                                let in_x = (x * S + kx) as isize - P as isize;
 
-                                if in_y >= P && in_y < IH + P && in_x >= P && in_x < IW + P {
-                                    let actual_y = in_y - P;
-                                    let actual_x = in_x - P;
+                                // check if within valid input bounds (zero padding outside)
+                                if in_y >= 0
+                                    && in_y < IH as isize
+                                    && in_x >= 0
+                                    && in_x < IW as isize
+                                {
+                                    // Input shape: (IC, IH, IW) -> index as [ic, y, x]
+                                    let input_val = input.at([ic, in_y as usize, in_x as usize]);
+                                    // Filter shape: (KH, KW, IC) -> index as [ky, kx, ic]
+                                    let filter_val = filter.at([ky, kx, ic]);
 
-                                    let input_idx = ic * IH * IW + actual_y * IW + actual_x;
-                                    let filter_idx = ky * W * IC + kx * IC + ic;
-
-                                    // sum +=
-                                    //     self.data[oc].0.data[filter_idx] as f32 * input[input_idx];
+                                    sum += filter_val * input_val;
                                 }
                             }
                         }
                     }
 
-                    let output_idx = oc * out_h * out_w + y * out_w + x;
-                    output[output_idx] = sum;
+                    // Output shape: (OC, out_h, out_w) -> index as [oc, y, x]
+                    output.set([oc, y, x], sum);
                 }
             }
         }
     }
+}
+
+pub trait ConvIO {
+    type Output;
+    type Input;
+    type OutputShape;
+    type InputShape;
+    const N: usize;
+}
+
+impl<
+    const IW: usize,
+    const IH: usize,
+    const IC: usize,
+    const KH: usize,
+    const KW: usize,
+    const OC: usize,
+    const S: usize,
+    const P: usize,
+> ConvIO for Conv<IW, IH, IC, KH, KW, OC, S, P>
+where
+    Tensor<{ IC * IH * IW }, 3, shape_ty!(IC, IH, IW)>: Sized,
+    Tensor<{ KH * KW * IC }, 3, shape_ty!(KH, KW, IC)>: Sized,
+    Tensor<
+        { OC * ((IH + 2 * P - KH) / S + 1) * ((IW + 2 * P - KW) / S + 1) },
+        3,
+        shape_ty!(OC, (IH + 2 * P - KH) / S + 1, (IW + 2 * P - KW) / S + 1),
+    >: Sized,
+{
+    const N: usize = IC * IH * IW; // Fixed: was IW * IH * IC
+    type Input = Tensor<{ IC * IH * IW }, 3, shape_ty!(IC, IH, IW)>; // Fixed order
+    type Output = Tensor<
+        { OC * ((IH + 2 * P - KH) / S + 1) * ((IW + 2 * P - KW) / S + 1) },
+        3,
+        Self::OutputShape,
+    >;
+    type InputShape = shape_ty!(IC, IH, IW); // Fixed order
+    type OutputShape = shape_ty!(OC, (IH + 2 * P - KH) / S + 1, (IW + 2 * P - KW) / S + 1);
 }
 
 // Forward pass implementation for ReLU

@@ -1,16 +1,20 @@
 #![allow(unused)]
 
-use std::f64::consts::PI;
-
 use nn::network::Conv;
-use nn::tensor;
+use nn::{Tensor, tensor};
+use std::any::type_name_of_val;
 
 fn main() {
-    let tn = tensor!(2, 3);
+    let mut tn = tensor!(2, 3);
 
     // println!("{}", type_of(&tn));
     // println!("{:?}", tn.get(0));
+
     println!("{}", tn.at([1, 1]));
+
+    tn.set([1, 1], 2.);
+
+    println!("{}", tn.at([1, 2]));
 
     #[rustfmt::skip]
     let c = Conv::<
@@ -20,11 +24,20 @@ fn main() {
         2,
         2,
         2,
-        0,
+        1,
         0
     >::init();
 
-    // dbg!(&c);
+    let mut out_space = c.create_output_space();
+    let input = Tensor::from([1.; 8])
+        .reshape::<<Conv<2, 2, 2, 2, 2, 2, 1, 0> as nn::network::ConvIO>::InputShape>();
+
+    dbg!(&c);
+    dbg!(&input);
+
+    c.forward(&input, &mut out_space);
+
+    dbg!(&out_space);
 }
 
 // OUTPUT:

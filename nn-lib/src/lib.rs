@@ -11,7 +11,7 @@ pub use nn_macros::network;
 #[macro_use]
 mod tensor;
 
-pub use tensor::{GetFromIndex, Tensor};
+pub use tensor::Tensor;
 
 // helper stuff for proc macro
 pub mod network;

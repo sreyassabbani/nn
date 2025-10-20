@@ -117,3 +117,9 @@ While you are reading the following, make sure all of this makes sense logically
 2. `const D: usize` — dimension of the tensor
 3. `Shape` — unrestricted generic parameter (examples: `[f64; 2]`, `[[[f64; 4]; 3]; 42]`)
 
+
+Very big alarm (one of the following types should not exist):
+```rs
+    Tensor<{ IH * IW * IC }, 3, shape_ty!(IH, IW, IC)>: Sized,
+    Tensor<{ KH * KW * IC }, 3, shape_ty!(KH, KW, IC)>: Sized,
+```
