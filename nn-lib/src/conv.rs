@@ -77,6 +77,13 @@ where
         Tensor::new()
     }
 
+    pub fn input_from_data(
+        &self,
+        data: [f64; IC * IH * IW],
+    ) -> Tensor<{ IC * IH * IW }, 3, shape_ty!(IC, IH, IW)> {
+        Tensor::from(data).reshape()
+    }
+
     pub fn forward(
         &self,
         input: &Tensor<{ IC * IH * IW }, 3, shape_ty!(IC, IH, IW)>,

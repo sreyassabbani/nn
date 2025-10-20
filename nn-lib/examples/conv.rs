@@ -30,14 +30,13 @@ fn main() {
     let mut avg_out_space = c.create_output_space();
     let mut cur_out_space = c.create_output_space();
 
-    let n = 200;
+    let n = 10000;
 
     for _ in 0..n {
         // re-randomize conv
         c = Conv::init();
 
-        let input =
-            Tensor::from([1.; 8]).reshape::<<Conv<2, 2, 2, 2, 2, 2, 1, 0> as ConvIO>::InputShape>();
+        let input = c.input_from_data([1.; 8]);
 
         // dbg!(&c);
         // dbg!(&input);
