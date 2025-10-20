@@ -11,6 +11,8 @@ pub use nn_macros::network;
 #[macro_use]
 mod tensor;
 
+pub mod conv;
+
 pub use tensor::Tensor;
 
 // helper stuff for proc macro
