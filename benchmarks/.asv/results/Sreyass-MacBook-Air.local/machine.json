@@ -1,0 +1,9 @@
+{
+    "arch": "arm64",
+    "cpu": "Apple M2",
+    "machine": "Sreyass-MacBook-Air.local",
+    "num_cpu": "8",
+    "os": "Darwin 25.0.0",
+    "ram": "8589934592",
+    "version": 1
+}
