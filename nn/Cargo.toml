@@ -3,12 +3,9 @@ name = "nn"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-unstable = []
-
 [dependencies]
-rand = "0.9.2"
-nn-macros = { path = "../nn-macros" }
+nn-utils = { path = "../nn-utils" }
+nn-macro = { path = "../nn-macro" }
 
 [[example]]
 name = "linear-regression"

@@ -5,18 +5,18 @@
 #![feature(generic_const_items)]
 #![feature(specialization)]
 
-// proc macro
-pub use nn_macros::network;
-
 #[macro_use]
 mod tensor;
 
 pub mod conv;
 
 pub use tensor::Tensor;
+pub use layerable::{LayerKind, Layerable};
 
 // helper stuff for proc macro
 pub mod network;
 
 // exposes `graph!` decl macro
 pub mod autodiff;
+
+pub mod layerable;

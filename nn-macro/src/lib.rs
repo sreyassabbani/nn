@@ -2,51 +2,54 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Ident, LitInt, Token, parse_macro_input};
+use nn_utils::layerable::{LayerKind, Layerable};
 
 // Custom parsing for our network DSL
 mod parsing {
     use super::*;
     use syn::parse::{Parse, ParseStream};
 
-    pub struct NetworkDef {
-        pub layers: Vec<Layer>,
-    }
+    fn parse_optional_usizes<const N: usize>(
+        content: &syn::parse::ParseBuffer<'_>,
+        defaults: [usize; N],
+    ) -> syn::Result<[usize; N]> {
+        let mut values = defaults;
 
-    pub enum Layer {
-        Conv {
-            /// Number of output channels/features in the output. Alternatively, this may be interpreted as the number of filters in the convolutional layer.
-            out_channels: usize,
-            kernel: usize,
-            stride: usize,
-            padding: usize,
-        },
-        Dense {
-            input: usize,
-            output: usize,
-        },
-        ReLU {
-            width: usize,
-        },
-        Sigmoid {
-            width: usize,
-        },
-    }
-
-    impl Layer {
-        pub fn input(&self) -> usize {
-            use Layer::*;
-            match self {
-                Conv {
-                    kernel,
-                    stride,
-                    padding,
-                    ..
-                } => 1,
-                Dense { input, .. } => *input,
-                ReLU { width } => *width,
-                Sigmoid { width } => *width,
+        for slot in &mut values {
+            if !content.peek(Token![,]) {
+                break;
             }
+            content.parse::<Token![,]>()?;
+            *slot = content.parse::<LitInt>()?.base10_parse()?;
         }
+
+        Ok(values)
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct LayerSpec {
+        pub input: usize,
+        pub kind: LayerKind,
+    }
+
+    impl LayerSpec {
+        pub fn new(input: usize, kind: LayerKind) -> Self {
+            Self { input, kind }
+        }
+    }
+
+    impl Layerable for LayerSpec {
+        fn input(&self) -> usize {
+            self.input
+        }
+
+        fn kind(&self) -> LayerKind {
+            self.kind.clone()
+        }
+    }
+
+    pub struct NetworkDef {
+        pub layers: Vec<LayerSpec>,
     }
 
     impl Parse for NetworkDef {
@@ -69,19 +72,27 @@ mod parsing {
                         let content;
                         ::syn::parenthesized!(content in input);
                         let next_size = content.parse::<LitInt>()?.base10_parse()?;
-                        layers.push(Layer::Dense {
-                            input: cur_size,
-                            output: next_size,
-                        });
+                        layers.push(LayerSpec::new(
+                            cur_size,
+                            LayerKind::Dense {
+                                output: next_size,
+                            },
+                        ));
 
                         // resize network width
                         cur_size = next_size;
                     }
                     "relu" | "ReLU" => {
-                        layers.push(Layer::ReLU { width: cur_size });
+                        layers.push(LayerSpec::new(
+                            cur_size,
+                            LayerKind::ReLU { width: cur_size },
+                        ));
                     }
                     "sigmoid" | "Sigmoid" => {
-                        layers.push(Layer::Sigmoid { width: cur_size });
+                        layers.push(LayerSpec::new(
+                            cur_size,
+                            LayerKind::Sigmoid { width: cur_size },
+                        ));
                     }
                     "conv" | "Conv" => {
                         // parse parens with comma-separated ints; allow optional named args later
@@ -93,28 +104,21 @@ mod parsing {
                         let _comma = content.parse::<Token![,]>()?;
                         let k: LitInt = content.parse()?;
 
-                        // defaults:
-                        let mut stride = 1usize;
-                        let mut pad = 0usize;
+                        // parse optional stride, pad (or more) using a generic helper
+                        let [stride, pad] = parse_optional_usizes(&content, [1, 0])?;
 
-                        // optional additional positional args
-                        if content.peek(Token![,]) {
-                            content.parse::<Token![,]>()?;
-                            let s: LitInt = content.parse()?;
-                            stride = s.base10_parse()?;
-                            if content.peek(Token![,]) {
-                                content.parse::<Token![,]>()?;
-                                let p: LitInt = content.parse()?;
-                                pad = p.base10_parse()?;
-                            }
-                        }
+                        let out_channels = out_c.base10_parse()?;
+                        layers.push(LayerSpec::new(
+                            cur_size,
+                            LayerKind::Conv {
+                                out_channels,
+                                kernel: k.base10_parse()?,
+                                stride,
+                                padding: pad,
+                            },
+                        ));
 
-                        layers.push(Layer::Conv {
-                            out_channels: out_c.base10_parse()?,
-                            kernel: k.base10_parse()?,
-                            stride,
-                            padding: pad,
-                        });
+                        cur_size = out_channels;
                     }
                     "output" => break,
                     _ => return Err(::syn::Error::new(layer_name.span(), "Unknown layer type")),
@@ -145,37 +149,40 @@ pub fn network(input: TokenStream) -> TokenStream {
 }
 
 fn generate_network(def: parsing::NetworkDef) -> TokenStream2 {
-    let input_size = def.layers[0].input();
+    let input_size = def.layers.first().map(|l| l.input()).unwrap_or(0);
     let layer_count = def.layers.len();
 
     // Calculate maximum buffer size needed
     let mut current_size = input_size;
     let mut max_size = input_size;
-    let layer_types: Vec<_> = def
-        .layers
-        .into_iter()
-        .map(|layer| {
-            use parsing::Layer;
+    let mut layer_io = Vec::with_capacity(layer_count);
+    let mut layer_types = Vec::with_capacity(layer_count);
 
-            return match layer {
-                Layer::Dense { output, .. } => {
-                    let l = quote! { ::nn::network::DenseLayer<#current_size, #output> };
-                    current_size = output;
-                    max_size = max_size.max(output);
-                    return l;
-                }
-                // Working data buffer's size stays the same for activation functions
-                Layer::ReLU { .. } => quote! { ::nn::network::ReLU<#current_size> },
-                Layer::Sigmoid { .. } => quote! { ::nn::network::Sigmoid<#current_size> },
-                Layer::Conv {
-                    out_channels,
-                    kernel,
-                    stride,
-                    padding,
-                } => quote! { ::nn::network::Conv<#current_size> },
-            };
-        })
-        .collect();
+    for layer in &def.layers {
+        let kind = layer.kind();
+
+        let next_size = match kind {
+            LayerKind::Dense { output } => output,
+            LayerKind::ReLU { .. } | LayerKind::Sigmoid { .. } => current_size,
+            LayerKind::Conv { out_channels, .. } => out_channels,
+        };
+
+        layer_io.push((current_size, next_size));
+
+        let tokens = match kind {
+            LayerKind::Dense { output } => {
+                quote! { ::nn::network::DenseLayer<#current_size, #output> }
+            }
+            LayerKind::ReLU { .. } => quote! { ::nn::network::ReLU<#current_size> },
+            LayerKind::Sigmoid { .. } => quote! { ::nn::network::Sigmoid<#current_size> },
+            LayerKind::Conv { .. } => quote! { ::nn::network::Conv<#current_size> },
+        };
+
+        layer_types.push(tokens);
+
+        max_size = max_size.max(next_size);
+        current_size = next_size;
+    }
 
     let output_size = current_size;
 
@@ -183,7 +190,7 @@ fn generate_network(def: parsing::NetworkDef) -> TokenStream2 {
     let mut forward_calls = Vec::new();
     let mut use_buf_a = true;
 
-    for i in 0..layer_count {
+    for (i, (in_size, out_size)) in layer_io.iter().enumerate() {
         let layer_idx = ::syn::Index::from(i);
         let (input_buf, output_buf) = if use_buf_a {
             (quote! { &self._buf_a }, quote! { &mut self._buf_b })
@@ -200,8 +207,8 @@ fn generate_network(def: parsing::NetworkDef) -> TokenStream2 {
 
         forward_calls.push(quote! {
             self.layers.#layer_idx.forward(
-                #input_buf[..#current_size],
-                #output_buf[..#current_size],
+                #input_buf[..#in_size],
+                #output_buf[..#out_size],
             );
         });
 
