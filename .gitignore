@@ -4,3 +4,6 @@ target
 # IDE/rust-analyzer config
 .helix
 .vscode
+
+# direnv
+.direnv
