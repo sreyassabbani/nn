@@ -11,8 +11,8 @@ pub trait IsTrue {}
 
 impl IsTrue for Assert<true> {}
 
-mod tensor;
 pub mod shape;
+mod tensor;
 
 pub mod conv;
 pub mod data;
