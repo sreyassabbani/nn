@@ -1,18 +1,18 @@
-use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
+use proc_macro2::Span;
 use syn::parse::{Parse, ParseStream};
 use syn::{Expr, Ident, Token};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum InputShape {
-    Vec {
-        n: TokenStream2,
-    },
-    Image {
-        c: TokenStream2,
-        h: TokenStream2,
-        w: TokenStream2,
-    },
+    Vec { n: Expr },
+    Image(Box<ImageShape>),
+}
+
+#[derive(Clone)]
+pub struct ImageShape {
+    pub c: Expr,
+    pub h: Expr,
+    pub w: Expr,
 }
 
 fn parse_expr_list(content: &syn::parse::ParseBuffer<'_>) -> syn::Result<Vec<Expr>> {
@@ -33,34 +33,37 @@ fn parse_expr_list(content: &syn::parse::ParseBuffer<'_>) -> syn::Result<Vec<Exp
     Ok(values)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum LayerSpecKind {
-    Dense {
-        output: TokenStream2,
-    },
+    Dense { output: Expr },
     ReLU,
     Sigmoid,
     Flatten,
-    Conv {
-        out_channels: TokenStream2,
-        kernel_h: TokenStream2,
-        kernel_w: TokenStream2,
-        stride: TokenStream2,
-        padding: TokenStream2,
-    },
+    Conv(Box<ConvSpec>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+pub struct ConvSpec {
+    pub out_channels: Expr,
+    pub kernel_h: Expr,
+    pub kernel_w: Expr,
+    pub stride: Expr,
+    pub padding: Expr,
+}
+
+#[derive(Clone)]
 pub struct LayerSpec {
+    pub span: Span,
     pub kind: LayerSpecKind,
 }
 
-pub struct NetworkDef {
+#[derive(Clone)]
+pub struct NetworkAst {
     pub input: InputShape,
     pub layers: Vec<LayerSpec>,
 }
 
-impl Parse for NetworkDef {
+impl Parse for NetworkAst {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let _name: Ident = input.parse()?;
 
@@ -68,12 +71,12 @@ impl Parse for NetworkDef {
         ::syn::parenthesized!(content in input);
         let input_dims = parse_expr_list(&content)?;
         let input_shape = match input_dims.as_slice() {
-            [n] => InputShape::Vec { n: quote! { #n } },
-            [c, h, w] => InputShape::Image {
-                c: quote! { #c },
-                h: quote! { #h },
-                w: quote! { #w },
-            },
+            [n] => InputShape::Vec { n: n.clone() },
+            [c, h, w] => InputShape::Image(Box::new(ImageShape {
+                c: c.clone(),
+                h: h.clone(),
+                w: w.clone(),
+            })),
             _ => {
                 return Err(::syn::Error::new(
                     content.span(),
@@ -88,6 +91,7 @@ impl Parse for NetworkDef {
 
         while !input.is_empty() {
             let layer_name: Ident = input.parse()?;
+            let layer_span = layer_name.span();
 
             match layer_name.to_string().as_str() {
                 "dense" => {
@@ -95,23 +99,25 @@ impl Parse for NetworkDef {
                     ::syn::parenthesized!(content in input);
                     let next_size: Expr = content.parse()?;
                     layers.push(LayerSpec {
-                        kind: LayerSpecKind::Dense {
-                            output: quote! { #next_size },
-                        },
+                        span: layer_span,
+                        kind: LayerSpecKind::Dense { output: next_size },
                     });
                 }
                 "relu" | "ReLU" => {
                     layers.push(LayerSpec {
+                        span: layer_span,
                         kind: LayerSpecKind::ReLU,
                     });
                 }
                 "sigmoid" | "Sigmoid" => {
                     layers.push(LayerSpec {
+                        span: layer_span,
                         kind: LayerSpecKind::Sigmoid,
                     });
                 }
                 "flatten" | "Flatten" => {
                     layers.push(LayerSpec {
+                        span: layer_span,
                         kind: LayerSpecKind::Flatten,
                     });
                 }
@@ -121,35 +127,37 @@ impl Parse for NetworkDef {
                     let args = parse_expr_list(&content)?;
 
                     let kind = match args.as_slice() {
-                        [out_channels, kernel] => LayerSpecKind::Conv {
-                            out_channels: quote! { #out_channels },
-                            kernel_h: quote! { #kernel },
-                            kernel_w: quote! { #kernel },
-                            stride: quote! { 1 },
-                            padding: quote! { 0 },
-                        },
-                        [out_channels, kernel, stride] => LayerSpecKind::Conv {
-                            out_channels: quote! { #out_channels },
-                            kernel_h: quote! { #kernel },
-                            kernel_w: quote! { #kernel },
-                            stride: quote! { #stride },
-                            padding: quote! { 0 },
-                        },
-                        [out_channels, kernel, stride, padding] => LayerSpecKind::Conv {
-                            out_channels: quote! { #out_channels },
-                            kernel_h: quote! { #kernel },
-                            kernel_w: quote! { #kernel },
-                            stride: quote! { #stride },
-                            padding: quote! { #padding },
-                        },
+                        [out_channels, kernel] => LayerSpecKind::Conv(Box::new(ConvSpec {
+                            out_channels: out_channels.clone(),
+                            kernel_h: kernel.clone(),
+                            kernel_w: kernel.clone(),
+                            stride: syn::parse_quote!(1),
+                            padding: syn::parse_quote!(0),
+                        })),
+                        [out_channels, kernel, stride] => LayerSpecKind::Conv(Box::new(ConvSpec {
+                            out_channels: out_channels.clone(),
+                            kernel_h: kernel.clone(),
+                            kernel_w: kernel.clone(),
+                            stride: stride.clone(),
+                            padding: syn::parse_quote!(0),
+                        })),
+                        [out_channels, kernel, stride, padding] => {
+                            LayerSpecKind::Conv(Box::new(ConvSpec {
+                                out_channels: out_channels.clone(),
+                                kernel_h: kernel.clone(),
+                                kernel_w: kernel.clone(),
+                                stride: stride.clone(),
+                                padding: padding.clone(),
+                            }))
+                        }
                         [out_channels, kernel_h, kernel_w, stride, padding] => {
-                            LayerSpecKind::Conv {
-                                out_channels: quote! { #out_channels },
-                                kernel_h: quote! { #kernel_h },
-                                kernel_w: quote! { #kernel_w },
-                                stride: quote! { #stride },
-                                padding: quote! { #padding },
-                            }
+                            LayerSpecKind::Conv(Box::new(ConvSpec {
+                                out_channels: out_channels.clone(),
+                                kernel_h: kernel_h.clone(),
+                                kernel_w: kernel_w.clone(),
+                                stride: stride.clone(),
+                                padding: padding.clone(),
+                            }))
                         }
                         _ => {
                             return Err(::syn::Error::new(
@@ -159,7 +167,10 @@ impl Parse for NetworkDef {
                         }
                     };
 
-                    layers.push(LayerSpec { kind });
+                    layers.push(LayerSpec {
+                        span: layer_span,
+                        kind,
+                    });
                 }
                 "output" => break,
                 _ => return Err(::syn::Error::new(layer_name.span(), "Unknown layer type")),
@@ -174,7 +185,7 @@ impl Parse for NetworkDef {
             }
         }
 
-        Ok(NetworkDef {
+        Ok(NetworkAst {
             input: input_shape,
             layers,
         })

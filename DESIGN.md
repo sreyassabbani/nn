@@ -58,11 +58,11 @@ Although it's significantly more terse, I feel it makes the structure of what yo
 
 ```rs
 let training_data = [(1.0, 2.0), /* more */].map(DataSample::from);
-network.train(&training_data);
+network.fit(&training_data, TrainConfig::default());
 
 let testing_data = [(3.0, 15.0), /* more */].map(DataSample::from);
-let cost = network.run(&testing_data);
-dbg!(cost);
+let y = network.predict(&[3.0]);
+dbg!(y);
 ```
 
 > [!NOTE]

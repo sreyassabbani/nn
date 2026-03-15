@@ -1,106 +1,24 @@
-use crate::dsl::{ShapeSpec, max_expr};
-use crate::parsing::{self, NetworkDef};
+use crate::ir::NetworkIr;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 
-pub fn generate_network(def: NetworkDef) -> TokenStream2 {
-    let input_shape = match def.input {
-        parsing::InputShape::Vec { n } => ShapeSpec::Vec { n },
-        parsing::InputShape::Image { c, h, w } => ShapeSpec::Image { c, h, w },
-    };
+pub fn generate_network(ir: &NetworkIr) -> TokenStream2 {
+    let layer_count = ir.layers.len();
+    let input_size_expr = &ir.input_size;
+    let output_size_expr = &ir.output_size;
+    let max_size_expr = &ir.max_buf_size;
+    let conv_checks = &ir.conv_checks;
 
-    let layer_count = def.layers.len();
-    let input_size_expr = input_shape.size_expr();
-
-    let mut current_shape = input_shape;
-    let mut layer_io = Vec::with_capacity(layer_count);
-    let mut layer_types = Vec::with_capacity(layer_count);
-    let mut layer_out_sizes = Vec::with_capacity(layer_count);
-    let mut conv_checks = Vec::with_capacity(layer_count);
-
-    for layer in &def.layers {
-        let in_size = current_shape.size_expr();
-        let (next_shape, layer_type) = match &layer.kind {
-            parsing::LayerSpecKind::Dense { output } => match current_shape {
-                ShapeSpec::Vec { n } => (
-                    ShapeSpec::Vec { n: output.clone() },
-                    quote! { ::tml::network::DenseLayer<{ #n }, { #output }> },
-                ),
-                ShapeSpec::Image { .. } => {
-                    return quote! {
-                        ::core::compile_error!("dense expects a vector input; add flatten before dense");
-                    };
-                }
-            },
-            parsing::LayerSpecKind::ReLU => {
-                let size = current_shape.size_expr();
-                (current_shape, quote! { ::tml::network::ReLU<{ #size }> })
-            }
-            parsing::LayerSpecKind::Sigmoid => {
-                let size = current_shape.size_expr();
-                (current_shape, quote! { ::tml::network::Sigmoid<{ #size }> })
-            }
-            parsing::LayerSpecKind::Flatten => {
-                let size = current_shape.size_expr();
-                (
-                    ShapeSpec::Vec { n: size.clone() },
-                    quote! { ::tml::network::Flatten<{ #size }> },
-                )
-            }
-            parsing::LayerSpecKind::Conv {
-                out_channels,
-                kernel_h,
-                kernel_w,
-                stride,
-                padding,
-            } => match &current_shape {
-                ShapeSpec::Image { c, h, w } => {
-                    conv_checks.push(quote! {
-                        const _: () = {
-                            if !(::tml::conv::conv_out_dim(#h, #padding, #kernel_h, #stride) > 0) {
-                                panic!("conv: invalid height (check input H, kernel, stride, padding)");
-                            }
-                            if !(::tml::conv::conv_out_dim(#w, #padding, #kernel_w, #stride) > 0) {
-                                panic!("conv: invalid width (check input W, kernel, stride, padding)");
-                            }
-                        };
-                    });
-                    let out_h =
-                        quote! { ::tml::conv::conv_out_dim(#h, #padding, #kernel_h, #stride) };
-                    let out_w =
-                        quote! { ::tml::conv::conv_out_dim(#w, #padding, #kernel_w, #stride) };
-                    (
-                        ShapeSpec::Image {
-                            c: out_channels.clone(),
-                            h: out_h,
-                            w: out_w,
-                        },
-                        quote! {
-                            ::tml::conv::Conv<{ #w }, { #h }, { #c }, { #kernel_h }, { #kernel_w }, { #out_channels }, { #stride }, { #padding }>
-                        },
-                    )
-                }
-                ShapeSpec::Vec { .. } => {
-                    return quote! {
-                        ::core::compile_error!("conv expects a (C, H, W) input shape");
-                    };
-                }
-            },
-        };
-
-        let out_size = next_shape.size_expr();
-        layer_io.push((in_size, out_size.clone()));
-        layer_types.push(layer_type);
-        layer_out_sizes.push(out_size);
-        current_shape = next_shape;
-    }
-
-    let output_size_expr = current_shape.size_expr();
-    let max_size_expr = max_expr(
-        std::iter::once(input_size_expr.clone())
-            .chain(layer_out_sizes.iter().cloned())
-            .collect(),
-    );
+    let layer_types = ir
+        .layers
+        .iter()
+        .map(|layer| layer.layer_type.clone())
+        .collect::<Vec<_>>();
+    let layer_io = ir
+        .layers
+        .iter()
+        .map(|layer| (layer.in_size.clone(), layer.out_size.clone()))
+        .collect::<Vec<_>>();
 
     let layer_inits = layer_types.iter().map(|layer_type| {
         quote! { <#layer_type>::init() }
@@ -287,18 +205,18 @@ pub fn generate_network(def: NetworkDef) -> TokenStream2 {
                     NetworkWorkspace::new()
                 }
 
-                pub fn inference(
+                pub fn predict(
                     &self,
                     input: &[::tml::Float; INPUT_SIZE],
                 ) -> [::tml::Float; OUTPUT_SIZE] {
                     let mut workspace = NetworkWorkspace::new();
-                    let output = self.inference_with_workspace(input, &mut workspace);
+                    let output = self.predict_with_workspace(input, &mut workspace);
                     let mut result = [0.0 as ::tml::Float; OUTPUT_SIZE];
                     result.copy_from_slice(output);
                     result
                 }
 
-                fn inference_with_workspace_layers<'a>(
+                fn predict_with_workspace_layers<'a>(
                     layers: &(#(#layer_types,)*),
                     input: &[::tml::Float; INPUT_SIZE],
                     workspace: &'a mut NetworkWorkspace,
@@ -308,15 +226,15 @@ pub fn generate_network(def: NetworkDef) -> TokenStream2 {
                     &workspace.#last_act_ident
                 }
 
-                pub fn inference_with_workspace<'a>(
+                pub fn predict_with_workspace<'a>(
                     &self,
                     input: &[::tml::Float; INPUT_SIZE],
                     workspace: &'a mut NetworkWorkspace,
                 ) -> &'a [::tml::Float; OUTPUT_SIZE] {
-                    Self::inference_with_workspace_layers(&self.layers, input, workspace)
+                    Self::predict_with_workspace_layers(&self.layers, input, workspace)
                 }
 
-                pub fn inference_in_place(
+                pub fn predict_in_place(
                     &mut self,
                     input: &[::tml::Float; INPUT_SIZE],
                 ) -> [::tml::Float; OUTPUT_SIZE] {
@@ -331,41 +249,12 @@ pub fn generate_network(def: NetworkDef) -> TokenStream2 {
                     result
                 }
 
-                #[deprecated(note = "use inference")]
-                pub fn forward(
-                    &self,
-                    input: &[::tml::Float; INPUT_SIZE],
-                ) -> [::tml::Float; OUTPUT_SIZE] {
-                    self.inference(input)
-                }
-
-                #[deprecated(note = "use inference_with_workspace")]
-                pub fn forward_with_workspace<'a>(
-                    &self,
-                    input: &[::tml::Float; INPUT_SIZE],
-                    workspace: &'a mut NetworkWorkspace,
-                ) -> &'a [::tml::Float; OUTPUT_SIZE] {
-                    self.inference_with_workspace(input, workspace)
-                }
-
-                #[deprecated(note = "use inference_in_place")]
-                pub fn forward_in_place(
-                    &mut self,
-                    input: &[::tml::Float; INPUT_SIZE],
-                ) -> [::tml::Float; OUTPUT_SIZE] {
-                    self.inference_in_place(input)
-                }
-
                 fn backward_with_workspace_layers(
                     layers: &mut (#(#layer_types,)*),
                     workspace: &mut NetworkWorkspace,
                     lr: ::tml::Float,
                 ) {
                     #(#backward_calls)*
-                }
-
-                fn backward_with_workspace(&mut self, workspace: &mut NetworkWorkspace, lr: ::tml::Float) {
-                    Self::backward_with_workspace_layers(&mut self.layers, workspace, lr);
                 }
 
                 fn train_step_layers(
@@ -375,7 +264,7 @@ pub fn generate_network(def: NetworkDef) -> TokenStream2 {
                     mut workspace: NetworkWorkspace,
                     lr: ::tml::Float,
                 ) -> (NetworkWorkspace, ::tml::Float) {
-                    Self::inference_with_workspace_layers(layers, input, &mut workspace);
+                    Self::predict_with_workspace_layers(layers, input, &mut workspace);
                     let loss = ::tml::network::mse_loss(
                         workspace.#last_act_ident.as_ref(),
                         target,
@@ -385,62 +274,7 @@ pub fn generate_network(def: NetworkDef) -> TokenStream2 {
                     (workspace, loss)
                 }
 
-                fn train_step(
-                    &mut self,
-                    input: &[::tml::Float; INPUT_SIZE],
-                    target: &[::tml::Float; OUTPUT_SIZE],
-                    workspace: NetworkWorkspace,
-                    lr: ::tml::Float,
-                ) -> (NetworkWorkspace, ::tml::Float) {
-                    Self::train_step_layers(&mut self.layers, input, target, workspace, lr)
-                }
-
-                pub fn train_with<
-                    D: AsRef<[[::tml::Float; INPUT_SIZE]]>,
-                    T: AsRef<[[::tml::Float; OUTPUT_SIZE]]>,
-                >(
-                    &mut self,
-                    data: D,
-                    targets: T,
-                    config: ::tml::network::TrainConfig,
-                ) -> ::tml::Float {
-                    let data = data.as_ref();
-                    let targets = targets.as_ref();
-                    assert_eq!(
-                        data.len(),
-                        targets.len(),
-                        "data/target length mismatch: {} vs {}",
-                        data.len(),
-                        targets.len()
-                    );
-                    if data.is_empty() || config.epochs == 0 {
-                        return 0.0;
-                    }
-
-                    let mut workspace = NetworkWorkspace::new();
-                    let mut total_loss = 0.0;
-                    let mut steps = 0usize;
-                    let layers = &mut self.layers;
-
-                    for _ in 0..config.epochs {
-                        for (input, target) in data.iter().zip(targets.iter()) {
-                            let (next_workspace, loss) = Self::train_step_layers(
-                                layers,
-                                input,
-                                target,
-                                workspace,
-                                config.lr,
-                            );
-                            workspace = next_workspace;
-                            total_loss += loss;
-                            steps += 1;
-                        }
-                    }
-
-                    total_loss / steps as ::tml::Float
-                }
-
-                pub fn fit_with(
+                pub fn fit(
                     &mut self,
                     samples: &[::tml::Sample<INPUT_SIZE, OUTPUT_SIZE>],
                     config: ::tml::network::TrainConfig,
@@ -472,22 +306,11 @@ pub fn generate_network(def: NetworkDef) -> TokenStream2 {
                     total_loss / steps as ::tml::Float
                 }
 
-                pub fn fit(
+                pub fn fit_default(
                     &mut self,
                     samples: &[::tml::Sample<INPUT_SIZE, OUTPUT_SIZE>],
                 ) -> ::tml::Float {
-                    self.fit_with(samples, ::tml::network::TrainConfig::default())
-                }
-
-                pub fn train<
-                    D: AsRef<[[::tml::Float; INPUT_SIZE]]>,
-                    T: AsRef<[[::tml::Float; OUTPUT_SIZE]]>,
-                >(
-                    &mut self,
-                    data: D,
-                    targets: T,
-                ) -> ::tml::Float {
-                    self.train_with(data, targets, ::tml::network::TrainConfig::default())
+                    self.fit(samples, ::tml::network::TrainConfig::default())
                 }
             }
 

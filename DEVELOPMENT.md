@@ -35,42 +35,11 @@ linear_regression::main::Network<(
 )>
 ```
 
-While parsing macro contents, `proc_macro2::TokenStream`s from `quote!` are declaratively collected into special variables in _three_ main stages:
+Macro expansion now happens in three explicit stages:
 
-In the first stage, an instance of `parsing::NetworkDef` is formed. This is the first step done through `syn::parse_macro_input!`. These are
-
-- `input_shape: (N) or (C, H, W)`
-- `layers: Vec<Layer>`
-
-Then, in the second stage, the following constants are generated, all extracted from `layers` and `input_size`
-
-- `layer_types`
-- `forward_calls`
-- `layer_inits`
-- other buffer setup (`max_size` from `layers` `use_buf_a`, `final_buffer`)
-
-<details>
-  <summary>The <code>parsing::Layer</code> type</summary>
-  
-  An enum defined as
-  
-  ```rs
-    pub enum Layer {
-      Conv {
-          /// Number of output channels/features in the output. Alternatively, this may be interpreted as the number of filters in the convolutional layer.
-          out_channels: usize,
-          kernel_h: usize,
-          kernel_w: usize,
-          stride: usize,
-          padding: usize,
-      },
-      Dense(usize),
-      ReLU,
-      Sigmoid,
-      Flatten,
-  }
-  ```
-</details>
+1. Parse tokens into `parsing::NetworkAst` (`InputShape` + `Vec<LayerSpec>` with `syn::Expr` payloads).
+2. Lower AST into `ir::NetworkIr`, where shape transitions are resolved and structural errors are reported (for example, `dense` on image tensors without `flatten`, invalid `conv` placement, invalid conv output dimensions).
+3. Generate tokens from IR in `codegen`, producing a `Network<Layers>` value with `predict*` and `fit*` methods plus reusable workspaces.
 
 ??? There is a lot of bypassing that is done especially around the Rust orphan rule by defining structs temporarily during the expansion of the macro.
 
