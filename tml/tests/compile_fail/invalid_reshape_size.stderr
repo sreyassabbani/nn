@@ -11,11 +11,11 @@ help: the trait `IsTrue` is implemented for `Assert<true>`
   |
   | impl IsTrue for Assert<true> {}
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `Tensor::<Shape>::reshape`
+note: required by a bound in `TensorBase::<Box<[f64]>, Shape>::reshape`
  --> $WORKSPACE/tml-utils/src/tensor.rs
   |
   |     pub fn reshape<NewShape>(self) -> Tensor<NewShape>
   |            ------- required by a bound in this associated function
 ...
   |         Assert<{ Shape::SIZE == NewShape::SIZE }>: IsTrue,
-  |                                                    ^^^^^^ required by this bound in `Tensor::<Shape>::reshape`
+  |                                                    ^^^^^^ required by this bound in `TensorBase::<Box<[f64]>, Shape>::reshape`

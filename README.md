@@ -29,7 +29,7 @@ Notice that in order to run this, I have `rust-toolchain.toml` set to `toolchain
 
 [^1]: yes. and also we don't talk about Rust compile times
 
-## Quickstart (current API)
+## Quickstart (current, work-in-progress API)
 
 Nightly-only (until `generic_const_exprs` stabilizes). In your crate root:
 ```rs
@@ -37,7 +37,9 @@ Nightly-only (until `generic_const_exprs` stabilizes). In your crate root:
 #![allow(incomplete_features)]
 ```
 
-Network DSL (vector or image inputs, with explicit `flatten` before dense layers):
+### Network DSL
+
+For vector or image inputs (with explicit `flatten` before dense layers):
 ```rs
 use tml::network;
 
@@ -48,15 +50,19 @@ let mut net = network! {
 let logits = net.predict(&[0.0; 3 * 32 * 32]);
 ```
 
+### Tensor Algebra
+
 Typed tensors use `shape!(...)` for shape syntax, constructors on `Tensor<Shape>`, and `tensor![...]` for literals:
 ```rs
-use tml::{Tensor, tensor};
+use tml::{Tensor, shape, tensor};
 
-type Image = tml::shape!(3, 32, 32);
+type Image = shape!(3, 32, 32);
 
 let zeros: Tensor<Image> = Tensor::zeros();
+
+// convert 2x2 grid to 4 flat
 let grid = tensor![[1.0, 2.0], [3.0, 4.0]];
-let flat = grid.reshape::<tml::shape!(4)>();
+let flat = grid.reshape::<shape!(4)>();
 ```
 
 This style is what the public tensor API is optimized around:
@@ -70,7 +76,7 @@ The examples in [`tml/examples`](/Users/sreysus/workflow/tml/tml/examples) are a
 - [`conv.rs`](/Users/sreysus/workflow/tml/tml/examples/conv.rs) shows the typed network DSL on image inputs
 - [`linear_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/linear_regression.rs) and [`quadratic_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/quadratic_regression.rs) show simple end-to-end training flows
 
-Rust-like autodiff with a tape:
+### Automatic differentiation
 ```rs
 use tml::Tape;
 
@@ -85,7 +91,7 @@ println!("dx = {:?}", grads.get("x"));
 println!("dy = {:?}", grads.get("y"));
 ```
 
-Expression DSL:
+### Expression DSL
 ```rs
 use tml::expr;
 

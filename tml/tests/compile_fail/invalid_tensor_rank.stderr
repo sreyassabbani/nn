@@ -1,4 +1,4 @@
-error[E0107]: struct takes 1 generic argument but 3 generic arguments were supplied
+error[E0107]: type alias takes 1 generic argument but 3 generic arguments were supplied
  --> tests/compile_fail/invalid_tensor_rank.rs:4:13
   |
 4 |     let _ = Tensor::<4, 3, [tml::Float; 4]>::zeros();
@@ -6,8 +6,8 @@ error[E0107]: struct takes 1 generic argument but 3 generic arguments were suppl
   |             |
   |             expected 1 generic argument
   |
-note: struct defined here, with 1 generic parameter: `Shape`
+note: type alias defined here, with 1 generic parameter: `Shape`
  --> $WORKSPACE/tml-utils/src/tensor.rs
   |
-  | pub struct Tensor<Shape: TensorShape> {
-  |            ^^^^^^ -----
+  | pub type Tensor<Shape> = TensorBase<Box<[Float]>, Shape>;
+  |          ^^^^^^ -----

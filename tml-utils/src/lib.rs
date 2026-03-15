@@ -23,7 +23,7 @@ pub use network::{DenseLayer, Flatten, Layer, ReLU, Sigmoid, TrainConfig, mse_lo
 pub use shape::TensorShape;
 #[doc(hidden)]
 pub use tensor::__tensor_from_literal;
-pub use tensor::{Tensor, TensorView, TensorViewMut};
+pub use tensor::{Tensor, TensorBase, TensorMut, TensorRef};
 
 // helper stuff for proc macro
 pub mod network;

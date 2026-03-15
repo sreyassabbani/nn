@@ -3,27 +3,51 @@ use std::{marker::PhantomData, ops};
 use crate::shape::{Dim, Nil, NonScalarShape, TensorShape};
 use crate::{Assert, Float, IsTrue};
 
-#[derive(Debug)]
-struct TensorCore<Shape> {
-    data: Box<[Float]>,
+pub struct TensorBase<Storage, Shape: TensorShape> {
+    storage: Storage,
     _shape_marker: PhantomData<Shape>,
 }
 
-#[derive(Debug)]
-pub struct Tensor<Shape: TensorShape> {
-    core: TensorCore<Shape>,
+pub type Tensor<Shape> = TensorBase<Box<[Float]>, Shape>;
+pub type TensorRef<'a, Shape> = TensorBase<&'a [Float], Shape>;
+pub type TensorMut<'a, Shape> = TensorBase<&'a mut [Float], Shape>;
+
+trait StorageRef {
+    fn as_slice(&self) -> &[Float];
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct TensorView<'a, Shape: TensorShape> {
-    data: &'a [Float],
-    _shape_marker: PhantomData<Shape>,
+trait StorageMut: StorageRef {
+    fn as_mut_slice(&mut self) -> &mut [Float];
 }
 
-#[derive(Debug)]
-pub struct TensorViewMut<'a, Shape: TensorShape> {
-    data: &'a mut [Float],
-    _shape_marker: PhantomData<Shape>,
+impl StorageRef for Box<[Float]> {
+    fn as_slice(&self) -> &[Float] {
+        self
+    }
+}
+
+impl StorageMut for Box<[Float]> {
+    fn as_mut_slice(&mut self) -> &mut [Float] {
+        self
+    }
+}
+
+impl StorageRef for &[Float] {
+    fn as_slice(&self) -> &[Float] {
+        self
+    }
+}
+
+impl StorageRef for &mut [Float] {
+    fn as_slice(&self) -> &[Float] {
+        self
+    }
+}
+
+impl StorageMut for &mut [Float] {
+    fn as_mut_slice(&mut self) -> &mut [Float] {
+        self
+    }
 }
 
 pub trait TensorLiteral {
@@ -32,22 +56,46 @@ pub trait TensorLiteral {
     fn write_flat(self, out: &mut Vec<Float>);
 }
 
-impl<Shape> Clone for TensorCore<Shape> {
+impl<Storage, Shape> std::fmt::Debug for TensorBase<Storage, Shape>
+where
+    Storage: std::fmt::Debug,
+    Shape: TensorShape,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TensorBase")
+            .field("storage", &self.storage)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<Storage, Shape> Clone for TensorBase<Storage, Shape>
+where
+    Storage: Clone,
+    Shape: TensorShape,
+{
     fn clone(&self) -> Self {
         Self {
-            data: self.data.clone(),
+            storage: self.storage.clone(),
             _shape_marker: PhantomData,
         }
     }
 }
 
-impl<Shape> Clone for Tensor<Shape>
+impl<Storage, Shape> Copy for TensorBase<Storage, Shape>
+where
+    Storage: Copy,
+    Shape: TensorShape,
+{
+}
+
+impl<Storage, Shape> TensorBase<Storage, Shape>
 where
     Shape: TensorShape,
 {
-    fn clone(&self) -> Self {
+    fn from_storage(storage: Storage) -> Self {
         Self {
-            core: self.core.clone(),
+            storage,
+            _shape_marker: PhantomData,
         }
     }
 }
@@ -56,14 +104,69 @@ impl<Shape> Tensor<Shape>
 where
     Shape: TensorShape,
 {
-    pub(crate) fn from_boxed(data: Box<[Float]>) -> Self {
-        assert_eq!(data.len(), Shape::SIZE, "tensor storage size mismatch");
-        Self {
-            core: TensorCore {
-                data,
-                _shape_marker: PhantomData,
-            },
-        }
+    pub fn as_slice(&self) -> &[Float] {
+        StorageRef::as_slice(&self.storage)
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [Float] {
+        StorageMut::as_mut_slice(&mut self.storage)
+    }
+
+    pub fn at(&self, index: [usize; Shape::RANK]) -> &Float {
+        let offset = Shape::offset(&index);
+        &self.as_slice()[offset]
+    }
+
+    pub fn set(&mut self, index: [usize; Shape::RANK], value: Float) {
+        let offset = Shape::offset(&index);
+        self.as_mut_slice()[offset] = value;
+    }
+}
+
+impl<'a, Shape> TensorRef<'a, Shape>
+where
+    Shape: TensorShape,
+{
+    pub fn as_slice(&self) -> &[Float] {
+        StorageRef::as_slice(&self.storage)
+    }
+
+    pub fn at(&self, index: [usize; Shape::RANK]) -> &Float {
+        let offset = Shape::offset(&index);
+        &self.as_slice()[offset]
+    }
+}
+
+impl<'a, Shape> TensorMut<'a, Shape>
+where
+    Shape: TensorShape,
+{
+    pub fn as_slice(&self) -> &[Float] {
+        StorageRef::as_slice(&self.storage)
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [Float] {
+        StorageMut::as_mut_slice(&mut self.storage)
+    }
+
+    pub fn at(&self, index: [usize; Shape::RANK]) -> &Float {
+        let offset = Shape::offset(&index);
+        &self.as_slice()[offset]
+    }
+
+    pub fn set(&mut self, index: [usize; Shape::RANK], value: Float) {
+        let offset = Shape::offset(&index);
+        self.as_mut_slice()[offset] = value;
+    }
+}
+
+impl<Shape> Tensor<Shape>
+where
+    Shape: TensorShape,
+{
+    pub(crate) fn from_boxed(storage: Box<[Float]>) -> Self {
+        assert_eq!(storage.len(), Shape::SIZE, "tensor storage size mismatch");
+        Self::from_storage(storage)
     }
 
     pub fn from_flat<const N: usize>(data: [Float; N]) -> Self
@@ -74,11 +177,11 @@ where
     }
 
     pub(crate) fn raw_slice(&self) -> &[Float] {
-        &self.core.data
+        self.as_slice()
     }
 
     pub(crate) fn raw_mut_slice(&mut self) -> &mut [Float] {
-        &mut self.core.data
+        self.as_mut_slice()
     }
 
     pub fn zeros() -> Self {
@@ -93,51 +196,27 @@ where
         Self::from_boxed(data.into_boxed_slice())
     }
 
-    pub fn as_slice(&self) -> &[Float] {
-        self.raw_slice()
-    }
-
-    pub fn as_mut_slice(&mut self) -> &mut [Float] {
-        self.raw_mut_slice()
-    }
-
     pub fn reshape<NewShape>(self) -> Tensor<NewShape>
     where
         NewShape: TensorShape,
         Assert<{ Shape::SIZE == NewShape::SIZE }>: IsTrue,
     {
-        Tensor::<NewShape>::from_boxed(self.core.data)
+        Tensor::<NewShape>::from_boxed(self.storage)
     }
 
-    pub fn view(&self) -> TensorView<'_, Shape> {
-        TensorView {
-            data: self.as_slice(),
-            _shape_marker: PhantomData,
-        }
+    pub fn as_ref(&self) -> TensorRef<'_, Shape> {
+        TensorRef::from_storage(self.as_slice())
     }
 
-    pub fn view_mut(&mut self) -> TensorViewMut<'_, Shape> {
-        TensorViewMut {
-            data: self.as_mut_slice(),
-            _shape_marker: PhantomData,
-        }
-    }
-
-    pub fn at(&self, index: [usize; Shape::RANK]) -> &Float {
-        let offset = Shape::offset(&index);
-        &self.core.data[offset]
-    }
-
-    pub fn set(&mut self, index: [usize; Shape::RANK], value: Float) {
-        let offset = Shape::offset(&index);
-        self.core.data[offset] = value;
+    pub fn as_mut(&mut self) -> TensorMut<'_, Shape> {
+        TensorMut::from_storage(self.as_mut_slice())
     }
 
     pub fn map_inplace<F>(&mut self, mut f: F)
     where
         F: FnMut(Float) -> Float,
     {
-        for value in self.core.data.iter_mut() {
+        for value in self.as_mut_slice() {
             *value = f(*value);
         }
     }
@@ -159,64 +238,69 @@ impl<Shape> Tensor<Shape>
 where
     Shape: NonScalarShape,
 {
+    pub fn get_ref(&self, index: usize) -> TensorRef<'_, Shape::Subshape> {
+        assert!(index < Shape::AXIS_LEN, "index out of bounds");
+        let stride = <Shape::Subshape as TensorShape>::SIZE;
+        let start = index * stride;
+        let end = start + stride;
+        TensorRef::from_storage(&self.as_slice()[start..end])
+    }
+}
+
+impl<'a, Shape> TensorRef<'a, Shape>
+where
+    Shape: NonScalarShape,
+{
+    pub fn get_ref(&self, index: usize) -> TensorRef<'_, Shape::Subshape> {
+        assert!(index < Shape::AXIS_LEN, "index out of bounds");
+        let stride = <Shape::Subshape as TensorShape>::SIZE;
+        let start = index * stride;
+        let end = start + stride;
+        TensorRef::from_storage(&self.as_slice()[start..end])
+    }
+}
+
+impl<Shape> Tensor<Shape>
+where
+    Shape: NonScalarShape,
+{
+    pub fn get_mut(&mut self, index: usize) -> TensorMut<'_, Shape::Subshape> {
+        assert!(index < Shape::AXIS_LEN, "index out of bounds");
+        let stride = <Shape::Subshape as TensorShape>::SIZE;
+        let start = index * stride;
+        let end = start + stride;
+        TensorMut::from_storage(&mut self.as_mut_slice()[start..end])
+    }
+}
+
+impl<'a, Shape> TensorMut<'a, Shape>
+where
+    Shape: NonScalarShape,
+{
+    pub fn get_ref(&self, index: usize) -> TensorRef<'_, Shape::Subshape> {
+        assert!(index < Shape::AXIS_LEN, "index out of bounds");
+        let stride = <Shape::Subshape as TensorShape>::SIZE;
+        let start = index * stride;
+        let end = start + stride;
+        TensorRef::from_storage(&self.as_slice()[start..end])
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> TensorMut<'_, Shape::Subshape> {
+        assert!(index < Shape::AXIS_LEN, "index out of bounds");
+        let stride = <Shape::Subshape as TensorShape>::SIZE;
+        let start = index * stride;
+        let end = start + stride;
+        TensorMut::from_storage(&mut self.as_mut_slice()[start..end])
+    }
+}
+
+impl<Shape> Tensor<Shape>
+where
+    Shape: NonScalarShape,
+{
     pub fn get(&self, index: usize) -> Tensor<Shape::Subshape> {
-        let view = self.get_view(index);
-        Tensor::<Shape::Subshape>::from_boxed(view.data.to_vec().into_boxed_slice())
-    }
-
-    pub fn get_view(&self, index: usize) -> TensorView<'_, Shape::Subshape> {
-        assert!(index < Shape::AXIS_LEN, "index out of bounds");
-        let stride = <Shape::Subshape as TensorShape>::SIZE;
-        let start = index * stride;
-        let end = start + stride;
-        TensorView {
-            data: &self.core.data[start..end],
-            _shape_marker: PhantomData,
-        }
-    }
-
-    pub fn get_view_mut(&mut self, index: usize) -> TensorViewMut<'_, Shape::Subshape> {
-        assert!(index < Shape::AXIS_LEN, "index out of bounds");
-        let stride = <Shape::Subshape as TensorShape>::SIZE;
-        let start = index * stride;
-        let end = start + stride;
-        TensorViewMut {
-            data: &mut self.core.data[start..end],
-            _shape_marker: PhantomData,
-        }
-    }
-}
-
-impl<'a, Shape> TensorView<'a, Shape>
-where
-    Shape: TensorShape,
-{
-    pub fn as_slice(&self) -> &[Float] {
-        self.data
-    }
-
-    pub fn at(&self, index: [usize; Shape::RANK]) -> &Float {
-        let offset = Shape::offset(&index);
-        &self.data[offset]
-    }
-}
-
-impl<'a, Shape> TensorViewMut<'a, Shape>
-where
-    Shape: TensorShape,
-{
-    pub fn as_mut_slice(&mut self) -> &mut [Float] {
-        self.data
-    }
-
-    pub fn at(&self, index: [usize; Shape::RANK]) -> &Float {
-        let offset = Shape::offset(&index);
-        &self.data[offset]
-    }
-
-    pub fn set(&mut self, index: [usize; Shape::RANK], value: Float) {
-        let offset = Shape::offset(&index);
-        self.data[offset] = value;
+        let row = self.get_ref(index);
+        Tensor::<Shape::Subshape>::from_boxed(row.as_slice().to_vec().into_boxed_slice())
     }
 }
 
@@ -236,7 +320,7 @@ where
     type Output = Tensor<Shape>;
 
     fn add(mut self, rhs: &Tensor<Shape>) -> Self::Output {
-        for (lhs, rhs) in self.core.data.iter_mut().zip(rhs.core.data.iter()) {
+        for (lhs, rhs) in self.as_mut_slice().iter_mut().zip(rhs.as_slice().iter()) {
             *lhs += rhs;
         }
         self
@@ -261,7 +345,7 @@ where
     Shape: TensorShape,
 {
     fn add_assign(&mut self, rhs: &Tensor<Shape>) {
-        for (lhs, rhs) in self.core.data.iter_mut().zip(rhs.core.data.iter()) {
+        for (lhs, rhs) in self.as_mut_slice().iter_mut().zip(rhs.as_slice().iter()) {
             *lhs += rhs;
         }
     }
@@ -274,7 +358,7 @@ where
     type Output = Tensor<Shape>;
 
     fn mul(mut self, rhs: &Tensor<Shape>) -> Self::Output {
-        for (lhs, rhs) in self.core.data.iter_mut().zip(rhs.core.data.iter()) {
+        for (lhs, rhs) in self.as_mut_slice().iter_mut().zip(rhs.as_slice().iter()) {
             *lhs *= rhs;
         }
         self
@@ -299,7 +383,7 @@ where
     Shape: TensorShape,
 {
     fn mul_assign(&mut self, rhs: &Tensor<Shape>) {
-        for (lhs, rhs) in self.core.data.iter_mut().zip(rhs.core.data.iter()) {
+        for (lhs, rhs) in self.as_mut_slice().iter_mut().zip(rhs.as_slice().iter()) {
             *lhs *= rhs;
         }
     }
@@ -312,7 +396,7 @@ where
     type Output = Tensor<Shape>;
 
     fn mul(mut self, rhs: Float) -> Self::Output {
-        for value in self.core.data.iter_mut() {
+        for value in self.as_mut_slice() {
             *value *= rhs;
         }
         self
@@ -324,7 +408,7 @@ where
     Shape: TensorShape,
 {
     fn mul_assign(&mut self, rhs: Float) {
-        for value in self.core.data.iter_mut() {
+        for value in self.as_mut_slice() {
             *value *= rhs;
         }
     }
@@ -337,7 +421,7 @@ where
     type Output = Tensor<Shape>;
 
     fn div(mut self, rhs: Float) -> Self::Output {
-        for value in self.core.data.iter_mut() {
+        for value in self.as_mut_slice() {
             *value /= rhs;
         }
         self
@@ -349,7 +433,7 @@ where
     Shape: TensorShape,
 {
     fn div_assign(&mut self, rhs: Float) {
-        for value in self.core.data.iter_mut() {
+        for value in self.as_mut_slice() {
             *value /= rhs;
         }
     }
@@ -406,7 +490,7 @@ mod tests {
     type T3 = crate::shape!(2, 3, 4);
 
     #[test]
-    fn indexing_views_and_owned_get_match_layout() {
+    fn indexing_borrows_and_owned_get_match_layout() {
         let mut t = Tensor::<T3>::zeros();
         let mut value = 0.0;
         for i in 0..2 {
@@ -420,18 +504,23 @@ mod tests {
 
         assert_eq!(*t.at([1, 2, 3]), 23.0);
 
-        let row = t.get_view(1);
+        let row = t.get_ref(1);
         assert_eq!(*row.at([2, 3]), 23.0);
 
         let owned = t.get(1);
         assert_eq!(*owned.at([2, 3]), 23.0);
+
+        let mut tmut = t.as_mut();
+        let mut row_mut = tmut.get_mut(0);
+        row_mut.set([0, 0], 99.0);
+        assert_eq!(*t.at([0, 0, 0]), 99.0);
     }
 
     #[test]
     #[should_panic(expected = "index out of bounds")]
-    fn get_view_panics_on_oob_index() {
+    fn get_ref_panics_on_oob_index() {
         let t = Tensor::<T3>::zeros();
-        let _ = t.get_view(2);
+        let _ = t.get_ref(2);
     }
 
     #[test]

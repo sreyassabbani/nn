@@ -16,6 +16,6 @@ fn main() {
     let flat = literal.clone().reshape::<shape!(6)>();
     println!("flat = {:?}", flat.as_slice());
 
-    let row = literal.get(1);
+    let row = literal.get_ref(1);
     println!("row = {:?}", row.as_slice());
 }
