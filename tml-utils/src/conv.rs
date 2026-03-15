@@ -1,6 +1,6 @@
 use crate::network::Layer;
 use crate::{Assert, Float, IsTrue, tensor::Tensor};
-use std::{array, marker::PhantomData};
+use std::array;
 
 #[doc(hidden)]
 pub const fn conv_out_dim(input: usize, pad: usize, kernel: usize, stride: usize) -> usize {
@@ -19,42 +19,28 @@ pub const fn conv_out_dim(input: usize, pad: usize, kernel: usize, stride: usize
 }
 
 #[derive(Debug, Clone)]
-pub struct Filter<const H: usize, const W: usize, const D: usize>
-where
-    [(); H * W * D]:,
-{
-    weights: Tensor<{ H * W * D }, 3, shape_ty!(H, W, D)>,
-    grads: Box<[Float; H * W * D]>,
+pub struct Filter<const H: usize, const W: usize, const D: usize> {
+    weights: Tensor<crate::shape!(H, W, D)>,
+    grads: Box<[Float]>,
 }
 
-impl<const H: usize, const W: usize, const D: usize> Default for Filter<H, W, D>
-where
-    Tensor<{ H * W * D }, 3, shape_ty!(H, W, D)>: Sized,
-    [(); H * W * D]:,
-{
+impl<const H: usize, const W: usize, const D: usize> Default for Filter<H, W, D> {
     fn default() -> Self {
-        let mut arr = [0.0 as Float; H * W * D];
+        let mut arr = vec![0.0 as Float; H * W * D];
         for v in &mut arr {
             *v = rand::random::<Float>();
         }
 
         Self {
-            weights: Tensor {
-                data: Box::new(arr),
-                _shape_marker: PhantomData,
-            },
-            grads: Box::new([0.0 as Float; H * W * D]),
+            weights: Tensor::<crate::shape!(H, W, D)>::from_boxed(arr.into_boxed_slice()),
+            grads: vec![0.0 as Float; H * W * D].into_boxed_slice(),
         }
     }
 }
 
-impl<const H: usize, const W: usize, const D: usize> Filter<H, W, D>
-where
-    Tensor<{ H * W * D }, 3, shape_ty!(H, W, D)>: Sized,
-    [(); H * W * D]:,
-{
+impl<const H: usize, const W: usize, const D: usize> Filter<H, W, D> {
     fn weights(&self) -> &[Float] {
-        self.weights.as_slice()
+        self.weights.raw_slice()
     }
 
     fn grads_mut(&mut self) -> &mut [Float] {
@@ -80,9 +66,7 @@ pub struct Conv<
     const OC: usize,
     const S: usize,
     const P: usize,
-> where
-    Tensor<{ FH * FW * IC }, 3, shape_ty!(FH, FW, IC)>: Sized,
-{
+> {
     filters: [Filter<FH, FW, IC>; OC],
     biases: Box<[Float; OC]>,
     bias_grads: Box<[Float; OC]>,
@@ -98,7 +82,6 @@ impl<
     const P: usize,
 > Conv<IW, IH, IC, FH, FW, OC, S, P>
 where
-    Tensor<{ FH * FW * IC }, 3, shape_ty!(FH, FW, IC)>: Sized,
     [(); IC * IH * IW]:,
     [(); OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)]:,
     Assert<{ conv_out_dim(IH, P, FH, S) > 0 }>: IsTrue,
@@ -113,37 +96,33 @@ where
     }
 
     pub fn create_output_space(&self) -> <Self as ConvIO>::Output {
-        Tensor::<
-            { OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S) },
-            3,
-            shape_ty!(OC, conv_out_dim(IH, P, FH, S), conv_out_dim(IW, P, FW, S)),
-        > {
-            data: Box::new(
-                [0.0 as Float; OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)],
-            ),
-            _shape_marker: PhantomData,
-        }
+        Tensor::<crate::shape!(
+            OC,
+            conv_out_dim(IH, P, FH, S),
+            conv_out_dim(IW, P, FW, S)
+        )>::from_boxed(
+            vec![
+                0.0 as Float;
+                OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)
+            ]
+            .into_boxed_slice(),
+        )
     }
 
     pub fn input_from_data(&self, data: [Float; IC * IH * IW]) -> <Self as ConvIO>::Input {
-        Tensor::<{ IC * IH * IW }, 3, shape_ty!(IC, IH, IW)> {
-            data: Box::new(data),
-            _shape_marker: PhantomData,
-        }
+        Tensor::<crate::shape!(IC, IH, IW)>::from_boxed(Vec::from(data).into_boxed_slice())
     }
 
     pub fn forward(
         &self,
-        input: &Tensor<{ IC * IH * IW }, 3, shape_ty!(IC, IH, IW)>,
+        input: &Tensor<crate::shape!(IC, IH, IW)>,
         output: &mut Tensor<
-            { OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S) },
-            3,
-            shape_ty!(OC, conv_out_dim(IH, P, FH, S), conv_out_dim(IW, P, FW, S)),
+            crate::shape!(OC, conv_out_dim(IH, P, FH, S), conv_out_dim(IW, P, FW, S)),
         >,
     ) {
-        let input_arr: &[Float; IC * IH * IW] = input.as_slice().try_into().expect("bad input");
+        let input_arr: &[Float; IC * IH * IW] = input.raw_slice().try_into().expect("bad input");
         let output_arr: &mut [Float; OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)] =
-            output.as_mut_slice().try_into().expect("bad output");
+            output.raw_mut_slice().try_into().expect("bad output");
         self.forward_flat(input_arr, output_arr);
     }
 
@@ -210,7 +189,7 @@ where
 
         for oc in 0..OC {
             let Filter { weights, grads } = &mut self.filters[oc];
-            let filter_weights = weights.as_slice();
+            let filter_weights = weights.raw_slice();
             let filter_grads = &mut grads[..];
 
             for y in 0..out_h {
@@ -249,7 +228,7 @@ where
 
         for oc in 0..OC {
             let Filter { weights, grads } = &mut self.filters[oc];
-            let weights = weights.as_mut_slice();
+            let weights = weights.raw_mut_slice();
             for i in 0..weights.len() {
                 weights[i] -= lr * grads[i];
                 grads[i] = 0.0;
@@ -273,7 +252,6 @@ impl<
 > Layer<{ IC * IH * IW }, { OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S) }>
     for Conv<IW, IH, IC, FH, FW, OC, S, P>
 where
-    Tensor<{ FH * FW * IC }, 3, shape_ty!(FH, FW, IC)>: Sized,
     [(); IC * IH * IW]:,
     [(); OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)]:,
     Assert<{ conv_out_dim(IH, P, FH, S) > 0 }>: IsTrue,
@@ -321,26 +299,16 @@ impl<
     const P: usize,
 > ConvIO for Conv<IW, IH, IC, FH, FW, OC, S, P>
 where
-    Tensor<{ IC * IH * IW }, 3, shape_ty!(IC, IH, IW)>: Sized,
-    Tensor<{ FH * FW * IC }, 3, shape_ty!(FH, FW, IC)>: Sized,
     [(); IC * IH * IW]:,
     [(); OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)]:,
-    Tensor<
-        { OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S) },
-        3,
-        shape_ty!(OC, conv_out_dim(IH, P, FH, S), conv_out_dim(IW, P, FW, S)),
-    >: Sized,
 {
     const N: usize = IC * IH * IW;
-    type Input = Tensor<{ IC * IH * IW }, 3, shape_ty!(IC, IH, IW)>;
-    type Output = Tensor<
-        { OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S) },
-        3,
-        Self::OutputShape,
-    >;
-    type InputShape = shape_ty!(IC, IH, IW);
-    type OutputShape = shape_ty!(OC, conv_out_dim(IH, P, FH, S), conv_out_dim(IW, P, FW, S));
-    type FilterShape = shape_ty!(FH, FW, IC);
+    type Input = Tensor<crate::shape!(IC, IH, IW)>;
+    type Output = Tensor<Self::OutputShape>;
+    type InputShape = crate::shape!(IC, IH, IW);
+    type OutputShape =
+        crate::shape!(OC, conv_out_dim(IH, P, FH, S), conv_out_dim(IW, P, FW, S));
+    type FilterShape = crate::shape!(FH, FW, IC);
 }
 
 #[allow(dead_code)]
@@ -371,7 +339,6 @@ impl<
     const P: usize,
 > ConvOps for Conv<IW, IH, IC, FH, FW, OC, S, P>
 where
-    Tensor<{ FH * FW * IC }, 3, shape_ty!(FH, FW, IC)>: Sized,
     [(); FH * FW * IC]:,
     [(); IC * IH * IW]:,
     [(); OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)]:,
@@ -420,7 +387,7 @@ mod tests {
         let mut conv = ConvCase::init();
         for (i, w) in conv.filters[0]
             .weights
-            .as_mut_slice()
+            .raw_mut_slice()
             .iter_mut()
             .enumerate()
         {
@@ -476,17 +443,17 @@ mod tests {
 
         let eps = 1e-7;
         let mut conv_plus = configured_conv();
-        conv_plus.filters[0].weights.as_mut_slice()[weight_idx] += eps;
+        conv_plus.filters[0].weights.raw_mut_slice()[weight_idx] += eps;
         let mut conv_minus = configured_conv();
-        conv_minus.filters[0].weights.as_mut_slice()[weight_idx] -= eps;
+        conv_minus.filters[0].weights.raw_mut_slice()[weight_idx] -= eps;
         let numeric = (objective(&conv_plus, &input, &output_grad)
             - objective(&conv_minus, &input, &output_grad))
             / (2.0 * eps);
 
         let lr = 1e-3;
-        let before = conv.filters[0].weights.as_slice()[weight_idx];
+        let before = conv.filters[0].weights.raw_slice()[weight_idx];
         conv.backward_flat(&input, &output_grad, &mut input_grad, lr);
-        let after = conv.filters[0].weights.as_slice()[weight_idx];
+        let after = conv.filters[0].weights.raw_slice()[weight_idx];
         let analytic = (before - after) / lr;
 
         approx_eq(analytic, numeric, 1e-6);
