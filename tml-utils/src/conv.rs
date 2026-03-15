@@ -306,8 +306,7 @@ where
     type Input = Tensor<crate::shape!(IC, IH, IW)>;
     type Output = Tensor<Self::OutputShape>;
     type InputShape = crate::shape!(IC, IH, IW);
-    type OutputShape =
-        crate::shape!(OC, conv_out_dim(IH, P, FH, S), conv_out_dim(IW, P, FW, S));
+    type OutputShape = crate::shape!(OC, conv_out_dim(IH, P, FH, S), conv_out_dim(IW, P, FW, S));
     type FilterShape = crate::shape!(FH, FW, IC);
 }
 

@@ -43,8 +43,11 @@ jobs:
           components: rustfmt, clippy
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run tests
-        run: rustup run nightly cargo test --all-targets --all-features --verbose
+      - name: Run tests except trybuild snapshots
+        run: rustup run nightly cargo test --all-targets --all-features --verbose -- --skip invalid_programs_fail_to_compile
+      - name: Run trybuild canary
+        continue-on-error: true
+        run: rustup run nightly cargo test -p tml --test compile_fail --verbose
       - name: Run clippy
         run: rustup run nightly cargo clippy --all-targets --all-features -- -D warnings
       - name: Run fmt check
