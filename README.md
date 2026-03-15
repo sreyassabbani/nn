@@ -117,6 +117,7 @@ This style is what the public tensor API is optimized around:
 The examples in [`tml/examples`](/Users/sreysus/workflow/tml/tml/examples) are a good starting point:
 - [`tensor_basics.rs`](/Users/sreysus/workflow/tml/tml/examples/tensor_basics.rs) shows `shape!`, `Tensor<Shape>`, `TensorRef`, `TensorMut`, literals, indexing, and reshape
 - [`conv.rs`](/Users/sreysus/workflow/tml/tml/examples/conv.rs) shows the typed network DSL on image inputs
+- [`sequential_manual.rs`](/Users/sreysus/workflow/tml/tml/examples/sequential_manual.rs) shows the same training runtime without `network!`
 - [`linear_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/linear_regression.rs) and [`quadratic_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/quadratic_regression.rs) show simple end-to-end training flows
 
 ### Automatic differentiation
