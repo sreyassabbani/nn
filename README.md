@@ -52,7 +52,7 @@ let logits = net.predict(&[0.0; 3 * 32 * 32]);
 
 ### Tensor Algebra
 
-Typed tensors use `shape!(...)` for shape syntax, constructors on `Tensor<Shape>`, and `tensor![...]` for literals:
+Typed tensors use `shape!(...)` for shape syntax, constructors on `Tensor<Shape>`, `tensor![...]` for literals, and `TensorRef` / `TensorMut` for borrowed sub-tensors:
 ```rs
 use tml::{Tensor, shape, tensor};
 
@@ -63,16 +63,20 @@ let zeros: Tensor<Image> = Tensor::zeros();
 // convert 2x2 grid to 4 flat
 let grid = tensor![[1.0, 2.0], [3.0, 4.0]];
 let flat = grid.reshape::<shape!(4)>();
+
+let row = grid.get_ref(1);
+assert_eq!(row.as_slice(), &[3.0, 4.0]);
 ```
 
 This style is what the public tensor API is optimized around:
 - name shapes with `type` aliases when they matter semantically
 - use `Tensor::<Shape>::zeros()` / `random()` for construction
 - use `tensor![...]` for actual tensor literals
-- use `reshape::<shape!(...)>()` when you want a different view of the same storage
+- use `get_ref()` / `get_mut()` when you want borrowed sub-tensors
+- use `reshape::<shape!(...)>()` when you want the same data with a different shape type
 
 The examples in [`tml/examples`](/Users/sreysus/workflow/tml/tml/examples) are a good starting point:
-- [`tensor_basics.rs`](/Users/sreysus/workflow/tml/tml/examples/tensor_basics.rs) shows `shape!`, `Tensor<Shape>`, literals, indexing, and reshape
+- [`tensor_basics.rs`](/Users/sreysus/workflow/tml/tml/examples/tensor_basics.rs) shows `shape!`, `Tensor<Shape>`, `TensorRef`, `TensorMut`, literals, indexing, and reshape
 - [`conv.rs`](/Users/sreysus/workflow/tml/tml/examples/conv.rs) shows the typed network DSL on image inputs
 - [`linear_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/linear_regression.rs) and [`quadratic_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/quadratic_regression.rs) show simple end-to-end training flows
 

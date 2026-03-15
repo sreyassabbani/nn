@@ -8,11 +8,14 @@ use tml::{Tensor, shape, tensor};
 fn main() {
     let mut tn = Tensor::<shape!(2, 3)>::zeros();
     let literal = tensor![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+    let flat = literal.clone().reshape::<shape!(6)>();
+    let top_row = literal.get_ref(0);
 
     println!("{}", tn.at([1, 1]));
     tn.set([1, 1], 2.);
     println!("{}", tn.at([1, 2]));
-    println!("{:?}", literal.reshape::<shape!(6)>().as_slice());
+    println!("{:?}", flat.as_slice());
+    println!("{:?}", top_row.as_slice());
 
     #[rustfmt::skip]
     let mut c = Conv::<
@@ -41,7 +44,8 @@ fn main() {
         avg_out_space += &cur_out_space;
     }
 
-    dbg!(avg_out_space / n as f64);
+    let avg = avg_out_space / n as f64;
+    println!("{:?}", avg.as_slice());
 }
 
 fn type_of<T>(_: &T) -> &'static str {

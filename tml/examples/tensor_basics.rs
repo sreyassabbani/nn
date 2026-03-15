@@ -1,7 +1,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use tml::{Tensor, shape, tensor};
+use tml::{Tensor, TensorMut, TensorRef, shape, tensor};
 
 type Image = shape!(1, 2, 3);
 
@@ -16,6 +16,11 @@ fn main() {
     let flat = literal.clone().reshape::<shape!(6)>();
     println!("flat = {:?}", flat.as_slice());
 
-    let row = literal.get_ref(1);
+    let row: TensorRef<'_, shape!(3)> = literal.get_ref(1);
     println!("row = {:?}", row.as_slice());
+
+    let mut literal_mut = literal.clone();
+    let mut row_mut: TensorMut<'_, shape!(3)> = literal_mut.get_mut(0);
+    row_mut.set([1], 9.0);
+    println!("mutated literal = {:?}", literal_mut.as_slice());
 }
