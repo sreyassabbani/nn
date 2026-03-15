@@ -11,6 +11,11 @@ pub trait IsTrue {}
 
 impl IsTrue for Assert<true> {}
 
+#[doc(hidden)]
+pub trait ReshapePreservesElementCount<const FROM: usize, const TO: usize> {}
+
+impl<const N: usize> ReshapePreservesElementCount<N, N> for () {}
+
 pub mod shape;
 mod tensor;
 
@@ -23,7 +28,7 @@ pub use network::{DenseLayer, Flatten, Layer, ReLU, Sigmoid, TrainConfig, mse_lo
 pub use shape::TensorShape;
 #[doc(hidden)]
 pub use tensor::__tensor_from_literal;
-pub use tensor::{Tensor, TensorBase, TensorMut, TensorRef};
+pub use tensor::{Tensor, TensorMut, TensorRef};
 
 // helper stuff for proc macro
 pub mod network;

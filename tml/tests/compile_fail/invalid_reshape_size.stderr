@@ -1,21 +1,22 @@
-error[E0277]: the trait bound `Assert<false>: IsTrue` is not satisfied
+error[E0277]: the trait bound `(): ReshapePreservesElementCount<2, 3>` is not satisfied
  --> tests/compile_fail/invalid_reshape_size.rs:4:13
   |
 4 |     let _ = tensor![1.0, 2.0].reshape::<shape!(3)>();
   |             ^^^^^^^^^^^^^^^^^ ------- required by a bound introduced by this call
   |             |
-  |             the trait `IsTrue` is not implemented for `Assert<false>`
+  |             the trait `ReshapePreservesElementCount<2, 3>` is not implemented for `()`
   |
-help: the trait `IsTrue` is implemented for `Assert<true>`
+help: the trait `ReshapePreservesElementCount<2, 3>` is not implemented for `()`
+      but trait `ReshapePreservesElementCount<2, 2>` is implemented for it
  --> $WORKSPACE/tml-utils/src/lib.rs
   |
-  | impl IsTrue for Assert<true> {}
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `TensorBase::<Box<[f64]>, Shape>::reshape`
+  | impl<const N: usize> ReshapePreservesElementCount<N, N> for () {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Tensor::<Shape>::reshape`
  --> $WORKSPACE/tml-utils/src/tensor.rs
   |
   |     pub fn reshape<NewShape>(self) -> Tensor<NewShape>
   |            ------- required by a bound in this associated function
 ...
-  |         Assert<{ Shape::SIZE == NewShape::SIZE }>: IsTrue,
-  |                                                    ^^^^^^ required by this bound in `TensorBase::<Box<[f64]>, Shape>::reshape`
+  |         (): ReshapePreservesElementCount<{ Shape::SIZE }, { NewShape::SIZE }>,
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Tensor::<Shape>::reshape`
