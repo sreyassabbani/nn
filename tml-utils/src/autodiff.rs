@@ -4,7 +4,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::Float;
 
-/// Node identifier for multi-input graphs
+/// Node identifier for expression graphs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NodeId {
     index: usize,
@@ -19,10 +19,10 @@ impl NodeId {
 
 static NEXT_GRAPH_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Multi-input computation graph with optimized performance.
+/// Expression graph with optimized performance.
 /// Forward evaluation is pure; reuse an [`EvalTape`] to cache intermediates explicitly.
 #[derive(Debug)]
-pub struct MultiGraph {
+pub struct ExprGraph {
     graph_id: u64,
     nodes: Vec<Node>,
     node_map: HashMap<String, NodeId>,
@@ -150,7 +150,7 @@ impl Op {
         );
     }
 
-    fn compute(self, inputs: &[Float]) -> Float {
+    fn apply(self, inputs: &[Float]) -> Float {
         match self {
             Op::Scale(factor) => inputs[0] * factor,
             Op::Sin => inputs[0].sin(),
@@ -166,7 +166,13 @@ impl Op {
             Op::Scale(factor) => factor,
             Op::Sin => inputs[0].cos(),
             Op::Cos => -inputs[0].sin(),
-            Op::Pow(exp) => exp as Float * inputs[0].powi(exp - 1),
+            Op::Pow(exp) => {
+                if exp == 0 {
+                    0.0
+                } else {
+                    exp as Float * inputs[0].powi(exp - 1)
+                }
+            }
             Op::Add => 1.0,
             Op::Mul => inputs
                 .iter()
@@ -178,7 +184,7 @@ impl Op {
     }
 }
 
-impl MultiGraph {
+impl ExprGraph {
     pub fn new() -> Self {
         Self {
             graph_id: NEXT_GRAPH_ID.fetch_add(1, Ordering::Relaxed),
@@ -256,9 +262,15 @@ impl MultiGraph {
         id
     }
 
-    /// Allocate a tape sized for this graph. Reuse it to avoid allocations between runs.
-    pub fn tape(&self) -> EvalTape {
+    /// Allocate a forward-mode tape sized for this graph.
+    /// Reuse it to avoid allocations between runs.
+    pub fn fwd_tape(&self) -> EvalTape {
         EvalTape::with_capacity(self.nodes.len(), self.inputs.len(), self.max_arity)
+    }
+
+    /// Allocate a reverse-mode tape sized for this graph.
+    pub fn tape(&self) -> ReverseTape {
+        self.reverse_tape()
     }
 
     pub fn reverse_tape(&self) -> ReverseTape {
@@ -271,14 +283,14 @@ impl MultiGraph {
 
     /// Pure forward evaluation that allocates its own tape. Suitable for single-shot calls.
     /// Returns a value and per-input gradient vector for each output.
-    pub fn compute(&self, inputs: &[Float]) -> Vec<(Float, Vec<Float>)> {
-        let mut tape = self.tape();
-        self.compute_with_tape(inputs, &mut tape)
+    pub fn eval_fwd(&self, inputs: &[Float]) -> Vec<(Float, Vec<Float>)> {
+        let mut tape = self.fwd_tape();
+        self.eval_fwd_with_tape(inputs, &mut tape)
     }
 
     /// Forward evaluation that reuses the provided tape to cache intermediates.
     /// Returns a value and per-input gradient vector for each output.
-    pub fn compute_with_tape(
+    pub fn eval_fwd_with_tape(
         &self,
         inputs: &[Float],
         tape: &mut EvalTape,
@@ -311,7 +323,7 @@ impl MultiGraph {
                         *slot = tape.primals[id.index];
                     }
 
-                    tape.primals[i] = op.compute(input_primals);
+                    tape.primals[i] = op.apply(input_primals);
 
                     // Compute derivatives using chain rule for each input dimension
                     let partials = &mut tape.scratch_partials[..arity];
@@ -361,17 +373,17 @@ impl MultiGraph {
             .collect()
     }
 
-    pub fn compute_single(&self, inputs: &[Float]) -> (Float, Vec<Float>) {
-        let mut tape = self.tape();
-        self.compute_single_with_tape(inputs, &mut tape)
+    pub fn eval_fwd_one(&self, inputs: &[Float]) -> (Float, Vec<Float>) {
+        let mut tape = self.fwd_tape();
+        self.eval_fwd_one_with_tape(inputs, &mut tape)
     }
 
-    pub fn compute_single_with_tape(
+    pub fn eval_fwd_one_with_tape(
         &self,
         inputs: &[Float],
         tape: &mut EvalTape,
     ) -> (Float, Vec<Float>) {
-        let mut outputs = self.compute_with_tape(inputs, tape);
+        let mut outputs = self.eval_fwd_with_tape(inputs, tape);
         assert!(
             outputs.len() == 1,
             "expected a single output, got {}",
@@ -380,17 +392,17 @@ impl MultiGraph {
         outputs.remove(0)
     }
 
-    pub fn compute_named(&self, inputs: &[Float]) -> Vec<(Float, Vec<(String, Float)>)> {
-        let mut tape = self.tape();
-        self.compute_with_tape_named(inputs, &mut tape)
+    pub fn eval_fwd_named(&self, inputs: &[Float]) -> Vec<(Float, Vec<(String, Float)>)> {
+        let mut tape = self.fwd_tape();
+        self.eval_fwd_named_with_tape(inputs, &mut tape)
     }
 
-    pub fn compute_with_tape_named(
+    pub fn eval_fwd_named_with_tape(
         &self,
         inputs: &[Float],
         tape: &mut EvalTape,
     ) -> Vec<(Float, Vec<(String, Float)>)> {
-        let outputs = self.compute_with_tape(inputs, tape);
+        let outputs = self.eval_fwd_with_tape(inputs, tape);
         outputs
             .into_iter()
             .map(|(value, grads)| {
@@ -407,33 +419,29 @@ impl MultiGraph {
 
     /// Reverse-mode evaluation that allocates its own tape. Suitable for single-shot calls.
     /// Returns a value and per-input gradient vector for each output.
-    pub fn compute_reverse(&self, inputs: &[Float]) -> Vec<(Float, Vec<Float>)> {
+    pub fn eval(&self, inputs: &[Float]) -> Vec<(Float, Vec<Float>)> {
         let mut tape = self.reverse_tape();
-        self.compute_reverse_with_tape(inputs, &mut tape)
+        self.eval_with_tape(inputs, &mut tape)
     }
 
     /// Reverse-mode evaluation that reuses the provided tape to cache intermediates.
     /// Returns a value and per-input gradient vector for each output.
-    pub fn compute_reverse_with_tape(
+    pub fn eval_with_tape(
         &self,
         inputs: &[Float],
         tape: &mut ReverseTape,
     ) -> Vec<(Float, Vec<Float>)> {
-        self.compute_reverse_with_tape_for(inputs, &self.outputs, tape)
+        self.eval_for_with_tape(inputs, &self.outputs, tape)
     }
 
     /// Reverse-mode evaluation for a selected set of outputs.
-    pub fn compute_reverse_for(
-        &self,
-        inputs: &[Float],
-        outputs: &[NodeId],
-    ) -> Vec<(Float, Vec<Float>)> {
+    pub fn eval_for(&self, inputs: &[Float], outputs: &[NodeId]) -> Vec<(Float, Vec<Float>)> {
         let mut tape = self.reverse_tape();
-        self.compute_reverse_with_tape_for(inputs, outputs, &mut tape)
+        self.eval_for_with_tape(inputs, outputs, &mut tape)
     }
 
     /// Reverse-mode evaluation for a selected set of outputs with a reusable tape.
-    pub fn compute_reverse_with_tape_for(
+    pub fn eval_for_with_tape(
         &self,
         inputs: &[Float],
         outputs: &[NodeId],
@@ -465,7 +473,7 @@ impl MultiGraph {
                     for (slot, &id) in input_primals.iter_mut().zip(inputs.iter()) {
                         *slot = tape.primals[id.index];
                     }
-                    tape.primals[i] = op.compute(input_primals);
+                    tape.primals[i] = op.apply(input_primals);
                 }
                 Node::Output(input_id) => {
                     tape.primals[i] = tape.primals[input_id.index];
@@ -522,17 +530,17 @@ impl MultiGraph {
         results
     }
 
-    pub fn compute_reverse_single(&self, inputs: &[Float]) -> (Float, Vec<Float>) {
+    pub fn eval_one(&self, inputs: &[Float]) -> (Float, Vec<Float>) {
         let mut tape = self.reverse_tape();
-        self.compute_reverse_single_with_tape(inputs, &mut tape)
+        self.eval_one_with_tape(inputs, &mut tape)
     }
 
-    pub fn compute_reverse_single_with_tape(
+    pub fn eval_one_with_tape(
         &self,
         inputs: &[Float],
         tape: &mut ReverseTape,
     ) -> (Float, Vec<Float>) {
-        let mut outputs = self.compute_reverse_with_tape(inputs, tape);
+        let mut outputs = self.eval_with_tape(inputs, tape);
         assert!(
             outputs.len() == 1,
             "expected a single output, got {}",
@@ -541,17 +549,17 @@ impl MultiGraph {
         outputs.remove(0)
     }
 
-    pub fn compute_reverse_named(&self, inputs: &[Float]) -> Vec<(Float, Vec<(String, Float)>)> {
+    pub fn eval_named(&self, inputs: &[Float]) -> Vec<(Float, Vec<(String, Float)>)> {
         let mut tape = self.reverse_tape();
-        self.compute_reverse_with_tape_named(inputs, &mut tape)
+        self.eval_named_with_tape(inputs, &mut tape)
     }
 
-    pub fn compute_reverse_with_tape_named(
+    pub fn eval_named_with_tape(
         &self,
         inputs: &[Float],
         tape: &mut ReverseTape,
     ) -> Vec<(Float, Vec<(String, Float)>)> {
-        let outputs = self.compute_reverse_with_tape(inputs, tape);
+        let outputs = self.eval_with_tape(inputs, tape);
         outputs
             .into_iter()
             .map(|(value, grads)| {
@@ -566,22 +574,22 @@ impl MultiGraph {
             .collect()
     }
 
-    pub fn compute_reverse_named_for(
+    pub fn eval_named_for(
         &self,
         inputs: &[Float],
         outputs: &[NodeId],
     ) -> Vec<(Float, Vec<(String, Float)>)> {
         let mut tape = self.reverse_tape();
-        self.compute_reverse_with_tape_named_for(inputs, outputs, &mut tape)
+        self.eval_named_for_with_tape(inputs, outputs, &mut tape)
     }
 
-    pub fn compute_reverse_with_tape_named_for(
+    pub fn eval_named_for_with_tape(
         &self,
         inputs: &[Float],
         outputs: &[NodeId],
         tape: &mut ReverseTape,
     ) -> Vec<(Float, Vec<(String, Float)>)> {
-        let outputs = self.compute_reverse_with_tape_for(inputs, outputs, tape);
+        let outputs = self.eval_for_with_tape(inputs, outputs, tape);
         outputs
             .into_iter()
             .map(|(value, grads)| {
@@ -597,97 +605,9 @@ impl MultiGraph {
     }
 }
 
-impl Default for MultiGraph {
+impl Default for ExprGraph {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Legacy single-input computation graph (kept for backward compatibility)
-#[derive(Clone, Debug)]
-pub struct CompGraph {
-    ops: Vec<Op>,
-}
-
-impl CompGraph {
-    pub fn new(ops: Vec<Op>) -> Self {
-        Self { ops }
-    }
-
-    pub fn tape(&self) -> EvalTape {
-        EvalTape::with_capacity(self.ops.len() + 1, 1, 1)
-    }
-
-    pub fn compute(&self, input: Float) -> (Float, Float) {
-        let mut tape = self.tape();
-        self.compute_with_tape(input, &mut tape)
-    }
-
-    pub fn compute_with_tape(&self, input: Float, tape: &mut EvalTape) -> (Float, Float) {
-        tape.reset(self.ops.len() + 1, 1, 1);
-
-        tape.primals[0] = input;
-        let idx = tape.tangent_index(0, 0);
-        tape.tangents[idx] = 1.0;
-
-        for (i, op) in self.ops.iter().enumerate() {
-            let primal = op.compute(&[tape.primals[i]]);
-            let tangent = tape.tangents[tape.tangent_index(i, 0)]
-                * op.compute_derivative(&[tape.primals[i]], 0);
-
-            tape.primals[i + 1] = primal;
-            let idx = tape.tangent_index(i + 1, 0);
-            tape.tangents[idx] = tangent;
-        }
-
-        (
-            *tape
-                .primals
-                .last()
-                .expect("tape primals should have at least one element"),
-            *tape
-                .tangents
-                .last()
-                .expect("tape tangents should have at least one element"),
-        )
-    }
-
-    pub fn reverse_tape(&self) -> ReverseTape {
-        ReverseTape::with_capacity(self.ops.len() + 1, 1)
-    }
-
-    pub fn compute_reverse(&self, input: Float) -> (Float, Float) {
-        let mut tape = self.reverse_tape();
-        self.compute_reverse_with_tape(input, &mut tape)
-    }
-
-    pub fn compute_reverse_with_tape(
-        &self,
-        input: Float,
-        tape: &mut ReverseTape,
-    ) -> (Float, Float) {
-        tape.reset(self.ops.len() + 1, 1);
-
-        tape.primals[0] = input;
-        for (i, op) in self.ops.iter().enumerate() {
-            tape.primals[i + 1] = op.compute(&[tape.primals[i]]);
-        }
-
-        tape.adjoints.fill(0.0);
-        tape.adjoints[self.ops.len()] = 1.0;
-
-        for (i, op) in self.ops.iter().enumerate().rev() {
-            let partial = op.compute_derivative(&[tape.primals[i]], 0);
-            tape.adjoints[i] += tape.adjoints[i + 1] * partial;
-        }
-
-        (
-            *tape
-                .primals
-                .last()
-                .expect("tape primals should have at least one element"),
-            tape.adjoints[0],
-        )
     }
 }
 
@@ -732,7 +652,7 @@ pub struct Tape {
 
 #[derive(Debug)]
 struct TapeInner {
-    graph: MultiGraph,
+    graph: ExprGraph,
     values: Vec<Float>,
 }
 
@@ -747,7 +667,7 @@ impl Tape {
     pub fn new() -> Self {
         Self {
             inner: Rc::new(RefCell::new(TapeInner {
-                graph: MultiGraph::new(),
+                graph: ExprGraph::new(),
                 values: Vec::new(),
             })),
         }
@@ -816,9 +736,7 @@ impl Tape {
     pub fn gradients(&self, output: &Var) -> Gradients {
         output.assert_same_tape(self);
         let inner = self.inner.borrow();
-        let results = inner
-            .graph
-            .compute_reverse_named_for(&inner.values, &[output.id]);
+        let results = inner.graph.eval_named_for(&inner.values, &[output.id]);
         let (value, grads) = results.into_iter().next().expect("missing output");
         Gradients { value, grads }
     }
@@ -836,7 +754,7 @@ impl Tape {
         let ids = outputs.iter().map(|var| var.id).collect::<Vec<_>>();
         inner
             .graph
-            .compute_reverse_named_for(&inner.values, &ids)
+            .eval_named_for(&inner.values, &ids)
             .into_iter()
             .map(|(value, grads)| Gradients { value, grads })
             .collect()
@@ -973,20 +891,20 @@ impl std::ops::Neg for Var {
     }
 }
 
-/// Macro for building computation graphs
+/// Macro for building differentiable expressions.
 ///
 /// # Examples
 ///
-/// Single input graph:
+/// Single input expression:
 /// ```rust,ignore
-/// let graph = graph! {
+/// let expr = expr! {
 ///     input -> Sin -> Cos -> output
 /// };
 /// ```
 ///
-/// Multi-input graph:
+/// Multi-input expression:
 /// ```rust,ignore
-/// let graph = graph! {
+/// let expr = expr! {
 ///     inputs: [x, y]
 ///     x -> Pow(2) -> @x_sq
 ///     y -> Sin -> @y_sin
@@ -995,9 +913,9 @@ impl std::ops::Neg for Var {
 /// };
 /// ```
 ///
-/// Mixed graph (operations without intermediate names):
+/// Mixed expression (operations without intermediate names):
 /// ```rust,ignore
-/// let graph = graph! {
+/// let expr = expr! {
 ///     inputs: [x, y]
 ///     x -> Pow(2) -> @temp1
 ///     y -> Cos -> @temp2
@@ -1008,31 +926,34 @@ impl std::ops::Neg for Var {
 ///
 /// # Performance Notes
 ///
-/// The default `compute` path allocates a fresh [`EvalTape`] each call for purity.
-/// When you need to reuse buffers, create a tape with `graph.tape()` and call
-/// `compute_with_tape` to keep allocations off the hot path. Operation arity is
-/// validated at runtime.
+/// The default `eval` path allocates a fresh [`ReverseTape`] each call for purity.
+/// When you need to reuse buffers, create a tape with `expr.tape()` (or
+/// `expr.reverse_tape()`) and call `eval_with_tape` to keep allocations off the hot
+/// path. Operation arity is validated at runtime.
 #[macro_export]
-macro_rules! graph {
-    // Single input graph (backward compatibility)
+macro_rules! expr {
+    // Single-input expression.
     (input -> $($rest:tt)*) => {
         {
-            use $crate::autodiff::{Op, CompGraph};
-            $crate::graph! {
-                @build_linear
-                [],
+            use $crate::autodiff::{ExprGraph, Op};
+            let mut graph = ExprGraph::new();
+            let __input = graph.input("input".to_string());
+            $crate::expr! {
+                @build_single
+                graph,
+                __input,
                 $($rest)*
             }
         }
     };
 
-    // Multi-input graph
+    // Multi-input expression.
     (inputs: [$($input:ident),*] $($rest:tt)*) => {
         {
-            use $crate::autodiff::{MultiGraph, Op, NodeId};
-            let mut graph = MultiGraph::new();
+            use $crate::autodiff::{ExprGraph, Op};
+            let mut graph = ExprGraph::new();
             $(let $input = graph.input(stringify!($input).to_string());)*
-            $crate::graph! {
+            $crate::expr! {
                 @build_multi
                 graph,
                 $($rest)*
@@ -1040,33 +961,38 @@ macro_rules! graph {
         }
     };
 
-    // Linear building (single input)
-    (@build_linear [$($ops:expr,)*], Add -> $($rest:tt)*) => {
-        compile_error!("Add is n-ary; use the multi-input graph form");
+    // Single-input builder.
+    (@build_single $graph:ident, $node:ident, Add -> $($rest:tt)*) => {
+        compile_error!("Add is n-ary; use `inputs: [...]` and `(@a, @b, ...) -> Add`");
     };
 
-    (@build_linear [$($ops:expr,)*], Mul -> $($rest:tt)*) => {
-        compile_error!("Mul is n-ary; use the multi-input graph form");
+    (@build_single $graph:ident, $node:ident, Mul -> $($rest:tt)*) => {
+        compile_error!("Mul is n-ary; use `inputs: [...]` and `(@a, @b, ...) -> Mul`");
     };
 
-    (@build_linear [$($ops:expr,)*], $op:ident -> $($rest:tt)*) => {
-        $crate::graph! {
-            @build_linear
-            [$($ops,)* Op::$op,],
+    (@build_single $graph:ident, $node:ident, $op:ident -> $($rest:tt)*) => {
+        let __next = $graph.operation(Op::$op, vec![$node]);
+        $crate::expr! {
+            @build_single
+            $graph,
+            __next,
             $($rest)*
         }
     };
 
-    (@build_linear [$($ops:expr,)*], $op:ident ( $($op_args:tt)* ) -> $($rest:tt)*) => {
-        $crate::graph! {
-            @build_linear
-            [$($ops,)* Op::$op($($op_args)*),],
+    (@build_single $graph:ident, $node:ident, $op:ident ( $($op_args:tt)* ) -> $($rest:tt)*) => {
+        let __next = $graph.operation(Op::$op($($op_args)*), vec![$node]);
+        $crate::expr! {
+            @build_single
+            $graph,
+            __next,
             $($rest)*
         }
     };
 
-    (@build_linear [$($ops:expr,)*], output) => {
-        CompGraph::new(Vec::from([$($ops,)*]))
+    (@build_single $graph:ident, $node:ident, output) => {
+        $graph.output($node);
+        $graph
     };
 
     (@build_multi $graph:ident, $node:ident -> Add -> @ $result:ident $($rest:tt)*) => {
@@ -1087,12 +1013,12 @@ macro_rules! graph {
 
     (@build_multi $graph:ident, $node:ident -> $op:ident -> @ $result:ident $($rest:tt)*) => {
         let $result = $graph.operation(Op::$op, vec![$node]);
-        $crate::graph! { @build_multi $graph, $($rest)* }
+        $crate::expr! { @build_multi $graph, $($rest)* }
     };
 
     (@build_multi $graph:ident, $node:ident -> $op:ident ( $($op_args:tt)* ) -> @ $result:ident $($rest:tt)*) => {
         let $result = $graph.operation(Op::$op($($op_args)*), vec![$node]);
-        $crate::graph! { @build_multi $graph, $($rest)* }
+        $crate::expr! { @build_multi $graph, $($rest)* }
     };
 
     // Reject unary ops in n-ary position
@@ -1123,13 +1049,13 @@ macro_rules! graph {
 
     (@build_multi $graph:ident, ( $( @ $node:ident ),+ ) -> $op:ident -> @ $result:ident $($rest:tt)*) => {
         let $result = $graph.operation(Op::$op, vec![$($node),+]);
-        $crate::graph! { @build_multi $graph, $($rest)* }
+        $crate::expr! { @build_multi $graph, $($rest)* }
     };
 
     // Generic N-ary op with extra args: (@a, @b, @c) -> scale(2.0) -> @res
     (@build_multi $graph:ident, ( $( @ $node:ident ),+ ) -> $op:ident ( $($op_args:tt)* ) -> @ $result:ident $($rest:tt)*) => {
         let $result = $graph.operation(Op::$op($($op_args)*), vec![$($node),+]);
-        $crate::graph! { @build_multi $graph, $($rest)* }
+        $crate::expr! { @build_multi $graph, $($rest)* }
     };
 
     (@build_multi $graph:ident, output @ $node:ident) => {
@@ -1153,7 +1079,7 @@ mod tests {
 
     #[test]
     fn reverse_matches_forward_and_finite_difference() {
-        let mut g = MultiGraph::new();
+        let mut g = ExprGraph::new();
         let x = g.input("x".to_string());
         let z = g.input("z".to_string());
         let x_sq = g.operation(Op::Pow(2), [x]);
@@ -1163,8 +1089,8 @@ mod tests {
         g.output(out);
 
         let base = [1.3, -0.7];
-        let (fwd_val, fwd_grad) = g.compute_single(&base);
-        let (rev_val, rev_grad) = g.compute_reverse_single(&base);
+        let (fwd_val, fwd_grad) = g.eval_fwd_one(&base);
+        let (rev_val, rev_grad) = g.eval_one(&base);
 
         approx_eq(fwd_val, rev_val, 1e-12);
         approx_eq(fwd_grad[0], rev_grad[0], 1e-10);
@@ -1176,8 +1102,8 @@ mod tests {
             let mut minus = base;
             plus[i] += eps;
             minus[i] -= eps;
-            let f_plus = g.compute_single(&plus).0;
-            let f_minus = g.compute_single(&minus).0;
+            let f_plus = g.eval_fwd_one(&plus).0;
+            let f_minus = g.eval_fwd_one(&minus).0;
             let numeric = (f_plus - f_minus) / (2.0 * eps);
             approx_eq(rev_grad[i], numeric, 1e-6);
         }
@@ -1185,10 +1111,10 @@ mod tests {
 
     #[test]
     fn output_rejects_foreign_node_id() {
-        let mut g1 = MultiGraph::new();
+        let mut g1 = ExprGraph::new();
         let foreign = g1.input("x".to_string());
 
-        let mut g2 = MultiGraph::new();
+        let mut g2 = ExprGraph::new();
         let _ = g2.input("y".to_string());
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             g2.output(foreign);
@@ -1224,5 +1150,18 @@ mod tests {
             .try_set("missing", 0.0)
             .expect_err("unknown input should fail");
         assert!(matches!(err, TapeError::UnknownInput(_)));
+    }
+
+    #[test]
+    fn pow_zero_has_zero_gradient_at_zero() {
+        let mut g = ExprGraph::new();
+        let x = g.input("x".to_string());
+        let out = g.operation(Op::Pow(0), [x]);
+        g.output(out);
+
+        let (value, grads) = g.eval_one(&[0.0]);
+        approx_eq(value, 1.0, 1e-12);
+        approx_eq(grads[0], 0.0, 1e-12);
+        assert!(grads[0].is_finite());
     }
 }

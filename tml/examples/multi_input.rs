@@ -1,23 +1,23 @@
-use tml::{Tape, graph};
+use tml::{Tape, expr};
 
 use std::any::type_name_of_val;
 
 fn main() {
-    // Test single input graph (backward compatibility)
-    let single_graph = graph! {
+    // Single-input expression uses the same ExprGraph API.
+    let single_graph = expr! {
         input -> Sin -> Cos -> Pow(2) -> output
     };
 
-    let (result, derivative) = single_graph.compute(1.0);
+    let (result, grads) = single_graph.eval_one(&[1.0]);
     println!(
         "Single input - f(1.0) = {:.6}, f'(1.0) = {:.6}",
-        result, derivative
+        result, grads[0]
     );
 
     println!("{}", type_name_of_val(&single_graph));
 
-    // Test multi-input graph with type-level arity
-    let multi_graph = graph! {
+    // Multi-input expression with type-level arity.
+    let multi_graph = expr! {
         inputs: [x, z]
         x -> Pow(2) -> @x_sq
         z -> Cos -> @z_cos
@@ -28,7 +28,7 @@ fn main() {
     println!("{}", type_name_of_val(&multi_graph));
 
     let mut tape = multi_graph.tape();
-    let (result, grads) = multi_graph.compute_single_with_tape(&[2.0, 1.0], &mut tape);
+    let (result, grads) = multi_graph.eval_one_with_tape(&[2.0, 1.0], &mut tape);
     println!(
         "Multi input - f(2.0, 1.0) = {:.6}, grad = {:?}",
         result, grads
@@ -45,7 +45,7 @@ fn main() {
     );
 
     // // Test mixed graph with type-level arity
-    // let mut mixed_graph = graph! {
+    // let mut mixed_graph = expr! {
     //     inputs: [x, y]
     //     x -> pow(2) -> sin -> @temp1
     //     y -> cos -> scale(2.0) -> @temp2
@@ -53,7 +53,7 @@ fn main() {
     //     output @result
     // };
 
-    // let results = mixed_graph.compute(&[1.0, 0.5]);
+    // let results = mixed_graph.eval(&[1.0, 0.5]);
     // if let Some((result, derivative)) = results.first() {
     //     println!(
     //         "Mixed graph - f(1.0, 0.5) = {:.6}, f'(1.0, 0.5) = {:.6}",
@@ -63,7 +63,7 @@ fn main() {
 
     // Test that type-level arity is enforced at compile time
     // This should cause a compilation error if we try to use wrong arity:
-    // let mut invalid_graph = graph! {
+    // let mut invalid_graph = expr! {
     //     inputs: [x, y]
     //     x -> add -> @result  // This should fail - add needs 2 inputs
     //     output @result

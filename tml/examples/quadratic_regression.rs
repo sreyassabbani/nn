@@ -18,12 +18,12 @@ fn main() {
         lr: 0.01,
         epochs: 2500,
     };
-    let loss = model.fit_with(&samples, config);
+    let loss = model.fit(&samples, config);
     println!("final loss: {loss}");
 
     for x in [-2.5, -1.0, 0.0, 1.2, 2.5] {
         let target = 0.5 * x * x - x + 0.2;
-        let pred = model.inference(&[x]);
+        let pred = model.predict(&[x]);
         println!("x = {x:>5.2} -> y = {:.4} (target {:.4})", pred[0], target);
     }
 }

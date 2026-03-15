@@ -20,7 +20,7 @@ fn zero_epochs_returns_zero_loss() {
         input(1) -> dense(1) -> output
     };
     let samples = vec![Sample::new([1.0], [5.0]), Sample::new([2.0], [8.0])];
-    let loss = model.fit_with(&samples, TrainConfig { lr: 0.1, epochs: 0 });
+    let loss = model.fit(&samples, TrainConfig { lr: 0.1, epochs: 0 });
     assert_eq!(loss, 0.0);
 }
 
@@ -29,6 +29,6 @@ fn conv_pipeline_infers_consistent_shape() {
     let model = network! {
         input(1, 4, 4) -> conv(2, 3, 1, 0) -> relu -> flatten -> dense(2) -> output
     };
-    let out = model.inference(&[0.0 as Float; 16]);
+    let out = model.predict(&[0.0 as Float; 16]);
     assert_eq!(out.len(), 2);
 }

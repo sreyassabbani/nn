@@ -24,11 +24,11 @@ fn main() {
         epochs: 2000,
     };
 
-    let loss = model.fit_with(&samples, config);
+    let loss = model.fit(&samples, config);
     println!("final loss: {loss}");
 
     for (idx, sample) in samples.iter().enumerate() {
-        let output = model.inference(&sample.input);
+        let output = model.predict(&sample.input);
         let pred = argmax(&output);
         println!("sample {idx}: pred={pred} logits={output:?}");
     }
