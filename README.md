@@ -45,8 +45,30 @@ let mut net = network! {
   input(3, 32, 32) -> conv(8, 3, 1, 1) -> relu -> flatten -> dense(10) -> output
 };
 
-let logits = net.inference(&[0.0; 3 * 32 * 32]);
+let logits = net.predict(&[0.0; 3 * 32 * 32]);
 ```
+
+Typed tensors use `shape!(...)` for shape syntax, constructors on `Tensor<Shape>`, and `tensor![...]` for literals:
+```rs
+use tml::{Tensor, tensor};
+
+type Image = tml::shape!(3, 32, 32);
+
+let zeros: Tensor<Image> = Tensor::zeros();
+let grid = tensor![[1.0, 2.0], [3.0, 4.0]];
+let flat = grid.reshape::<tml::shape!(4)>();
+```
+
+This style is what the public tensor API is optimized around:
+- name shapes with `type` aliases when they matter semantically
+- use `Tensor::<Shape>::zeros()` / `random()` for construction
+- use `tensor![...]` for actual tensor literals
+- use `reshape::<shape!(...)>()` when you want a different view of the same storage
+
+The examples in [`tml/examples`](/Users/sreysus/workflow/tml/tml/examples) are a good starting point:
+- [`tensor_basics.rs`](/Users/sreysus/workflow/tml/tml/examples/tensor_basics.rs) shows `shape!`, `Tensor<Shape>`, literals, indexing, and reshape
+- [`conv.rs`](/Users/sreysus/workflow/tml/tml/examples/conv.rs) shows the typed network DSL on image inputs
+- [`linear_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/linear_regression.rs) and [`quadratic_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/quadratic_regression.rs) show simple end-to-end training flows
 
 Rust-like autodiff with a tape:
 ```rs
@@ -61,4 +83,19 @@ let grads = tape.gradients(&z);
 println!("value = {}", grads.value);
 println!("dx = {:?}", grads.get("x"));
 println!("dy = {:?}", grads.get("y"));
+```
+
+Expression DSL:
+```rs
+use tml::expr;
+
+let expr = expr! {
+  inputs: [x, y]
+  x -> Pow(2) -> @x2
+  y -> Cos -> @ycos
+  (@x2, @ycos) -> Add -> @out
+  output @out
+};
+
+let (value, grad) = expr.eval_one(&[2.0, 1.0]);
 ```

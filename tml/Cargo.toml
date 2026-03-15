@@ -9,6 +9,7 @@ tml-macro = { path = "../tml-macro" }
 
 [dev-dependencies]
 criterion = "0.5"
+trybuild = "1.0"
 
 [features]
 unstable = []

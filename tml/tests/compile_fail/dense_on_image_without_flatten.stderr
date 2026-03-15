@@ -1,0 +1,5 @@
+error: dense expects a vector input; add flatten before dense
+ --> tests/compile_fail/dense_on_image_without_flatten.rs:8:27
+  |
+8 |         input(1, 4, 4) -> dense(2) -> output
+  |                           ^^^^^
