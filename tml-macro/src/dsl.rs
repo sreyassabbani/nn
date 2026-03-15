@@ -21,9 +21,3 @@ impl ShapeSpec {
         }
     }
 }
-
-pub fn max_expr(exprs: Vec<TokenStream2>) -> TokenStream2 {
-    let mut iter = exprs.into_iter();
-    let first = iter.next().unwrap_or_else(|| quote! { 0 });
-    iter.fold(first, |acc, expr| quote! { __nn_max(#acc, #expr) })
-}

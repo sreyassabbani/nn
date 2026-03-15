@@ -1,7 +1,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use tml::{Float, Sample, TrainConfig, network};
+use tml::{Adam, Float, Sample, TrainConfig, network};
 
 const C: usize = 1;
 const H: usize = 4;
@@ -19,12 +19,14 @@ fn main() {
         .map(Sample::from)
         .collect();
 
+    let mut optimizer = Adam::new(0.03);
     let config = TrainConfig {
-        lr: 0.05,
         epochs: 2000,
+        batch_size: 2,
+        shuffle_seed: Some(5),
     };
 
-    let loss = model.fit(&samples, config);
+    let loss = model.fit(&samples, &mut optimizer, config);
     println!("final loss: {loss}");
 
     for (idx, sample) in samples.iter().enumerate() {

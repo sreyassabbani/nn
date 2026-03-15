@@ -1,4 +1,4 @@
-use crate::dsl::{ShapeSpec, max_expr};
+use crate::dsl::ShapeSpec;
 use crate::parsing::{InputShape, LayerSpecKind, NetworkAst};
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -6,15 +6,11 @@ use quote::quote;
 #[derive(Debug, Clone)]
 pub struct LayerIr {
     pub layer_type: TokenStream2,
-    pub in_size: TokenStream2,
     pub out_size: TokenStream2,
 }
 
 #[derive(Debug, Clone)]
 pub struct NetworkIr {
-    pub input_size: TokenStream2,
-    pub output_size: TokenStream2,
-    pub max_buf_size: TokenStream2,
     pub layers: Vec<LayerIr>,
     pub conv_checks: Vec<TokenStream2>,
 }
@@ -39,14 +35,11 @@ impl NetworkIr {
             },
         };
 
-        let input_size = input_shape.size_expr();
         let mut current_shape = input_shape;
         let mut layers = Vec::with_capacity(ast.layers.len());
-        let mut layer_out_sizes = Vec::with_capacity(ast.layers.len());
         let mut conv_checks = Vec::with_capacity(ast.layers.len());
 
         for layer in &ast.layers {
-            let in_size = current_shape.size_expr();
             let (next_shape, layer_type) = match &layer.kind {
                 LayerSpecKind::Dense { output } => match current_shape {
                     ShapeSpec::Vec { n } => {
@@ -140,24 +133,12 @@ impl NetworkIr {
             let out_size = next_shape.size_expr();
             layers.push(LayerIr {
                 layer_type,
-                in_size,
                 out_size: out_size.clone(),
             });
-            layer_out_sizes.push(out_size);
             current_shape = next_shape;
         }
 
-        let output_size = current_shape.size_expr();
-        let max_buf_size = max_expr(
-            std::iter::once(input_size.clone())
-                .chain(layer_out_sizes)
-                .collect(),
-        );
-
         Ok(Self {
-            input_size,
-            output_size,
-            max_buf_size,
             layers,
             conv_checks,
         })

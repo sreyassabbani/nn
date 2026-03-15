@@ -1,7 +1,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use tml::{Float, Sample, TrainConfig, network};
+use tml::{Float, Sample, Sgd, TrainConfig, network};
 
 #[test]
 fn type_contains_expected_layers() {
@@ -20,7 +20,15 @@ fn zero_epochs_returns_zero_loss() {
         input(1) -> dense(1) -> output
     };
     let samples = vec![Sample::new([1.0], [5.0]), Sample::new([2.0], [8.0])];
-    let loss = model.fit(&samples, TrainConfig { lr: 0.1, epochs: 0 });
+    let mut optimizer = Sgd::new(0.1);
+    let loss = model.fit(
+        &samples,
+        &mut optimizer,
+        TrainConfig {
+            epochs: 0,
+            ..TrainConfig::default()
+        },
+    );
     assert_eq!(loss, 0.0);
 }
 

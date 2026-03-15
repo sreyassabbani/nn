@@ -1,5 +1,6 @@
-use crate::network::Layer;
+use crate::network::{Initializer, Layer, LayerDims, Optimizer, XavierUniform};
 use crate::{Assert, Float, IsTrue, tensor::Tensor};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::array;
 
 #[doc(hidden)]
@@ -24,21 +25,16 @@ pub struct Filter<const H: usize, const W: usize, const D: usize> {
     grads: Box<[Float]>,
 }
 
-impl<const H: usize, const W: usize, const D: usize> Default for Filter<H, W, D> {
-    fn default() -> Self {
-        let mut arr = vec![0.0 as Float; H * W * D];
-        for v in &mut arr {
-            *v = rand::random::<Float>();
-        }
-
+impl<const H: usize, const W: usize, const D: usize> Filter<H, W, D> {
+    fn zeroed() -> Self {
         Self {
-            weights: Tensor::<crate::shape!(H, W, D)>::from_boxed(arr.into_boxed_slice()),
+            weights: Tensor::<crate::shape!(H, W, D)>::from_boxed(
+                vec![0.0 as Float; H * W * D].into_boxed_slice(),
+            ),
             grads: vec![0.0 as Float; H * W * D].into_boxed_slice(),
         }
     }
-}
 
-impl<const H: usize, const W: usize, const D: usize> Filter<H, W, D> {
     fn weights(&self) -> &[Float] {
         self.weights.raw_slice()
     }
@@ -88,11 +84,38 @@ where
     Assert<{ conv_out_dim(IW, P, FW, S) > 0 }>: IsTrue,
 {
     pub fn init() -> Self {
-        Conv {
-            filters: array::from_fn(|_| Filter::default()),
+        Self::with_initializer(XavierUniform)
+    }
+
+    pub fn seeded(seed: u64) -> Self {
+        Self::with_initializer_and_seed(XavierUniform, seed)
+    }
+
+    pub fn with_initializer<I: Initializer>(initializer: I) -> Self {
+        let mut rng = rand::rng();
+        Self::with_initializer_and_rng(initializer, &mut rng)
+    }
+
+    pub fn with_initializer_and_seed<I: Initializer>(initializer: I, seed: u64) -> Self {
+        let mut rng = StdRng::seed_from_u64(seed);
+        Self::with_initializer_and_rng(initializer, &mut rng)
+    }
+
+    pub fn with_initializer_and_rng<I: Initializer, R: Rng + ?Sized>(
+        initializer: I,
+        rng: &mut R,
+    ) -> Self {
+        let mut conv = Conv {
+            filters: array::from_fn(|_| Filter::zeroed()),
             biases: Box::new([0.0 as Float; OC]),
             bias_grads: Box::new([0.0 as Float; OC]),
+        };
+        let fan_in = FH * FW * IC;
+        let fan_out = FH * FW * OC;
+        for filter in &mut conv.filters {
+            initializer.fill(filter.weights.raw_mut_slice(), fan_in, fan_out, rng);
         }
+        conv
     }
 
     pub fn create_output_space(&self) -> <Self as ConvIO>::Output {
@@ -176,16 +199,11 @@ where
         input: &[Float; IC * IH * IW],
         output_grad: &[Float; OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)],
         input_grad: &mut [Float; IC * IH * IW],
-        lr: Float,
     ) {
         let out_h = conv_out_dim(IH, P, FH, S);
         let out_w = conv_out_dim(IW, P, FW, S);
 
         input_grad.fill(0.0);
-        self.bias_grads.fill(0.0);
-        for filter in &mut self.filters {
-            filter.grads_mut().fill(0.0);
-        }
 
         for oc in 0..OC {
             let Filter { weights, grads } = &mut self.filters[oc];
@@ -225,19 +243,27 @@ where
                 }
             }
         }
-
-        for oc in 0..OC {
-            let Filter { weights, grads } = &mut self.filters[oc];
-            let weights = weights.raw_mut_slice();
-            for i in 0..weights.len() {
-                weights[i] -= lr * grads[i];
-                grads[i] = 0.0;
-            }
-
-            self.biases[oc] -= lr * self.bias_grads[oc];
-            self.bias_grads[oc] = 0.0;
-        }
     }
+}
+
+impl<
+    const IW: usize,
+    const IH: usize,
+    const IC: usize,
+    const FH: usize,
+    const FW: usize,
+    const OC: usize,
+    const S: usize,
+    const P: usize,
+> LayerDims for Conv<IW, IH, IC, FH, FW, OC, S, P>
+where
+    [(); IC * IH * IW]:,
+    [(); OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)]:,
+    Assert<{ conv_out_dim(IH, P, FH, S) > 0 }>: IsTrue,
+    Assert<{ conv_out_dim(IW, P, FW, S) > 0 }>: IsTrue,
+{
+    const INPUT: usize = IC * IH * IW;
+    const OUTPUT: usize = OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S);
 }
 
 impl<
@@ -271,9 +297,36 @@ where
         _output: &[Float; OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)],
         output_grad: &[Float; OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)],
         input_grad: &mut [Float; IC * IH * IW],
-        lr: Float,
     ) {
-        self.backward_flat(input, output_grad, input_grad, lr);
+        self.backward_flat(input, output_grad, input_grad);
+    }
+
+    fn zero_grad(&mut self) {
+        self.bias_grads.fill(0.0);
+        for filter in &mut self.filters {
+            filter.grads_mut().fill(0.0);
+        }
+    }
+
+    fn apply_gradients<O: Optimizer>(
+        &mut self,
+        optimizer: &mut O,
+        slot: &mut usize,
+        scale: Float,
+    ) {
+        for filter in &mut self.filters {
+            optimizer.update_parameter(
+                *slot,
+                filter.weights.raw_mut_slice(),
+                filter.grads.as_ref(),
+                scale,
+            );
+            *slot += 1;
+            filter.grads_mut().fill(0.0);
+        }
+        optimizer.update_parameter(*slot, self.biases.as_mut_slice(), self.bias_grads.as_slice(), scale);
+        *slot += 1;
+        self.bias_grads.fill(0.0);
     }
 }
 
@@ -417,7 +470,8 @@ mod tests {
         let output_grad = [0.3, -0.2, 0.1, 0.4];
         let mut input_grad = [0.0; IN_SIZE];
 
-        conv.backward_flat(&input, &output_grad, &mut input_grad, 0.0);
+        conv.zero_grad();
+        conv.backward_flat(&input, &output_grad, &mut input_grad);
 
         let eps = 1e-7;
         for i in 0..IN_SIZE {
@@ -449,11 +503,9 @@ mod tests {
             - objective(&conv_minus, &input, &output_grad))
             / (2.0 * eps);
 
-        let lr = 1e-3;
-        let before = conv.filters[0].weights.raw_slice()[weight_idx];
-        conv.backward_flat(&input, &output_grad, &mut input_grad, lr);
-        let after = conv.filters[0].weights.raw_slice()[weight_idx];
-        let analytic = (before - after) / lr;
+        conv.zero_grad();
+        conv.backward_flat(&input, &output_grad, &mut input_grad);
+        let analytic = conv.filters[0].grads[weight_idx];
 
         approx_eq(analytic, numeric, 1e-6);
     }

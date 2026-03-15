@@ -39,15 +39,54 @@ Nightly-only (until `generic_const_exprs` stabilizes). In your crate root:
 
 ### Network DSL
 
-For vector or image inputs (with explicit `flatten` before dense layers):
+`network!` is syntax sugar for building a typed `Sequential` model. Training now goes through an explicit optimizer:
+```rs
+use tml::{Sgd, TrainConfig, network};
+
+let mut net = network! {
+  input(1) -> dense(8) -> relu -> dense(1) -> output
+};
+
+let mut optimizer = Sgd::new(0.05);
+let samples = [
+  tml::Sample::new([0.0], [1.0]),
+  tml::Sample::new([1.0], [3.0]),
+];
+let loss = net.fit(
+  &samples,
+  &mut optimizer,
+  TrainConfig {
+    epochs: 200,
+    batch_size: 2,
+    shuffle_seed: Some(7),
+  },
+);
+let prediction = net.predict(&[0.5]);
+```
+
+For image inputs, keep `flatten` explicit before dense layers:
 ```rs
 use tml::network;
 
-let mut net = network! {
+let net = network! {
   input(3, 32, 32) -> conv(8, 3, 1, 1) -> relu -> flatten -> dense(10) -> output
 };
 
 let logits = net.predict(&[0.0; 3 * 32 * 32]);
+```
+
+You can also build the same runtime manually, without the DSL:
+```rs
+use tml::{Chain, DenseLayer, End, ReLU, Sequential};
+
+let layers = Chain::<_, _, 8>::new(
+  DenseLayer::<1, 8>::init(),
+  Chain::<_, _, 8>::new(
+    ReLU::<8>::init(),
+    Chain::<_, _, 1>::new(DenseLayer::<8, 1>::init(), End),
+  ),
+);
+let net = Sequential::new(layers);
 ```
 
 ### Tensor Algebra
@@ -81,6 +120,8 @@ The examples in [`tml/examples`](/Users/sreysus/workflow/tml/tml/examples) are a
 - [`linear_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/linear_regression.rs) and [`quadratic_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/quadratic_regression.rs) show simple end-to-end training flows
 
 ### Automatic differentiation
+
+The scalar autodiff modules are still available, but they are currently an experimental side path. The main network/tensor training path uses explicit layer backprop plus optimizers.
 ```rs
 use tml::Tape;
 
