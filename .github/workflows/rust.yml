@@ -46,8 +46,12 @@ jobs:
       - name: Run tests except trybuild snapshots
         run: rustup run nightly cargo test --all-targets --all-features --verbose -- --skip invalid_programs_fail_to_compile
       - name: Run trybuild canary
+        id: trybuild_canary
         continue-on-error: true
         run: rustup run nightly cargo test -p tml --test compile_fail --verbose
+      - name: Warn on trybuild drift
+        if: steps.trybuild_canary.outcome == 'failure'
+        run: echo "::warning title=Floating nightly trybuild drift::compile_fail snapshots differ on floating nightly; pinned nightly remains the authoritative merge gate."
       - name: Run clippy
         run: rustup run nightly cargo clippy --all-targets --all-features -- -D warnings
       - name: Run fmt check
