@@ -1,5 +1,7 @@
-use crate::{Float, Sample};
+use crate::conv::{Conv, conv_out_dim};
+use crate::{ConvGeometryIsValid, Float, Sample};
 use rand::{Rng, SeedableRng, rngs::StdRng, seq::SliceRandom};
+use std::fmt;
 
 pub trait Initializer {
     fn fill<R: Rng + ?Sized>(
@@ -71,7 +73,7 @@ impl Initializer for KaimingUniform {
     }
 }
 
-pub trait Optimizer {
+pub trait Optimizer: fmt::Debug {
     fn begin_step(&mut self) {}
     fn update_parameter(
         &mut self,
@@ -189,25 +191,71 @@ impl Optimizer for Adam {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
 pub struct TrainConfig {
+    optimizer: Box<dyn Optimizer>,
     pub epochs: usize,
     pub batch_size: usize,
     pub shuffle_seed: Option<u64>,
 }
 
-impl Default for TrainConfig {
-    fn default() -> Self {
+impl fmt::Debug for TrainConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TrainConfig")
+            .field("optimizer", &self.optimizer)
+            .field("epochs", &self.epochs)
+            .field("batch_size", &self.batch_size)
+            .field("shuffle_seed", &self.shuffle_seed)
+            .finish()
+    }
+}
+
+impl TrainConfig {
+    pub fn new<O: Optimizer + 'static>(optimizer: O) -> Self {
         Self {
+            optimizer: Box::new(optimizer),
             epochs: 1,
             batch_size: 1,
             shuffle_seed: None,
         }
     }
+
+    pub fn sgd(lr: Float) -> Self {
+        Self::new(Sgd::new(lr))
+    }
+
+    pub fn adam(lr: Float) -> Self {
+        Self::new(Adam::new(lr))
+    }
+
+    pub fn epochs(mut self, epochs: usize) -> Self {
+        self.epochs = epochs;
+        self
+    }
+
+    pub fn batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = batch_size.max(1);
+        self
+    }
+
+    pub fn shuffle_seed(mut self, shuffle_seed: u64) -> Self {
+        self.shuffle_seed = Some(shuffle_seed);
+        self
+    }
+
+    fn optimizer_mut(&mut self) -> &mut dyn Optimizer {
+        self.optimizer.as_mut()
+    }
 }
 
-pub trait Loss<const N: usize> {
-    fn loss_and_grad(&self, output: &[Float; N], target: &[Float; N]) -> ([Float; N], Float);
+impl Default for TrainConfig {
+    fn default() -> Self {
+        Self::adam(1e-3)
+    }
+}
+
+pub trait LossFunction<const N: usize>: fmt::Debug {
+    fn loss_and_grad(&self, output: &[Float; N], target: &[Float; N], grad: &mut [Float; N])
+    -> Float;
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -232,11 +280,14 @@ pub fn mse_loss<const N: usize>(
     loss / N as Float
 }
 
-impl<const N: usize> Loss<N> for MeanSquaredError {
-    fn loss_and_grad(&self, output: &[Float; N], target: &[Float; N]) -> ([Float; N], Float) {
-        let mut grad = [0.0; N];
-        let loss = mse_loss(output, target, &mut grad);
-        (grad, loss)
+impl<const N: usize> LossFunction<N> for MeanSquaredError {
+    fn loss_and_grad(
+        &self,
+        output: &[Float; N],
+        target: &[Float; N],
+        grad: &mut [Float; N],
+    ) -> Float {
+        mse_loss(output, target, grad)
     }
 }
 
@@ -252,13 +303,7 @@ pub trait Layer<const IN: usize, const OUT: usize> {
 
     fn zero_grad(&mut self) {}
 
-    fn apply_gradients<O: Optimizer>(
-        &mut self,
-        _optimizer: &mut O,
-        _slot: &mut usize,
-        _scale: Float,
-    ) {
-    }
+    fn apply_gradients(&mut self, _optimizer: &mut dyn Optimizer, _slot: &mut usize, _scale: Float) {}
 }
 
 pub trait LayerDims {
@@ -378,7 +423,12 @@ impl<const IN: usize, const OUT: usize> Layer<IN, OUT> for DenseLayer<IN, OUT> {
         self.bias_grads.fill(0.0);
     }
 
-    fn apply_gradients<O: Optimizer>(&mut self, optimizer: &mut O, slot: &mut usize, scale: Float) {
+    fn apply_gradients(
+        &mut self,
+        optimizer: &mut dyn Optimizer,
+        slot: &mut usize,
+        scale: Float,
+    ) {
         optimizer.update_parameter(*slot, &mut self.weights, &self.weight_grads, scale);
         *slot += 1;
         optimizer.update_parameter(*slot, self.biases.as_mut_slice(), self.bias_grads.as_slice(), scale);
@@ -519,350 +569,575 @@ impl<const N: usize> Layer<N, N> for Flatten<N> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct End;
+mod private {
+    use super::*;
 
-#[derive(Debug)]
-pub struct Chain<Head, Tail, const MID: usize> {
-    head: Head,
-    tail: Tail,
-}
+    #[derive(Debug, Clone, Copy, Default)]
+    pub struct End;
 
-impl<Head, Tail, const MID: usize> Chain<Head, Tail, MID> {
-    pub const fn new(head: Head, tail: Tail) -> Self {
-        Self { head, tail }
+    #[derive(Debug)]
+    pub struct Chain<Head, Tail, const MID: usize> {
+        pub(super) head: Head,
+        pub(super) tail: Tail,
     }
 
-    pub fn head(&self) -> &Head {
-        &self.head
-    }
-
-    pub fn tail(&self) -> &Tail {
-        &self.tail
-    }
-}
-
-pub trait IntoChain: LayerDims + Sized {
-    fn into_chain(self) -> Chain<Self, End, { Self::OUTPUT }> {
-        Chain::new(self, End)
-    }
-}
-
-impl<T> IntoChain for T
-where
-    T: LayerDims,
-    [(); T::OUTPUT]:,
-{
-}
-
-pub trait AppendLayer<Next>: Sized {
-    type Output;
-    fn then(self, next: Next) -> Self::Output;
-}
-
-impl<Next> AppendLayer<Next> for End
-where
-    Next: LayerDims,
-    [(); Next::OUTPUT]:,
-{
-    type Output = Chain<Next, End, { Next::OUTPUT }>;
-
-    fn then(self, next: Next) -> Self::Output {
-        Chain::new(next, End)
-    }
-}
-
-impl<Head, Tail, const MID: usize, Next> AppendLayer<Next> for Chain<Head, Tail, MID>
-where
-    Tail: AppendLayer<Next>,
-{
-    type Output = Chain<Head, Tail::Output, MID>;
-
-    fn then(self, next: Next) -> Self::Output {
-        Chain::new(self.head, self.tail.then(next))
-    }
-}
-
-#[derive(Debug)]
-pub struct TerminalWorkspace<const OUT: usize> {
-    activation: Box<[Float; OUT]>,
-    gradient: Box<[Float; OUT]>,
-}
-
-#[derive(Debug)]
-pub struct ChainWorkspace<const MID: usize, TailWorkspace> {
-    activation: Box<[Float; MID]>,
-    gradient: Box<[Float; MID]>,
-    tail: TailWorkspace,
-}
-
-#[derive(Debug)]
-pub struct SequentialWorkspace<BodyWorkspace, const INPUT: usize> {
-    body: BodyWorkspace,
-    input_grad: Box<[Float; INPUT]>,
-}
-
-pub trait ModuleChain<const INPUT: usize, const OUTPUT: usize> {
-    type Workspace;
-
-    fn workspace(&self) -> Self::Workspace;
-    fn forward_with_workspace(&self, input: &[Float; INPUT], workspace: &mut Self::Workspace);
-    fn output(workspace: &Self::Workspace) -> &[Float; OUTPUT];
-    fn set_output_grad(workspace: &mut Self::Workspace, grad: &[Float; OUTPUT]);
-    fn backward_with_workspace(
-        &mut self,
-        input: &[Float; INPUT],
-        input_grad: &mut [Float; INPUT],
-        workspace: &mut Self::Workspace,
-    );
-    fn zero_grad(&mut self);
-    fn apply_gradients<O: Optimizer>(
-        &mut self,
-        optimizer: &mut O,
-        slot: &mut usize,
-        scale: Float,
-    );
-}
-
-impl<Head, const INPUT: usize, const OUTPUT: usize> ModuleChain<INPUT, OUTPUT>
-    for Chain<Head, End, OUTPUT>
-where
-    Head: Layer<INPUT, OUTPUT>,
-{
-    type Workspace = TerminalWorkspace<OUTPUT>;
-
-    fn workspace(&self) -> Self::Workspace {
-        TerminalWorkspace {
-            activation: Box::new([0.0; OUTPUT]),
-            gradient: Box::new([0.0; OUTPUT]),
+    impl<Head, Tail, const MID: usize> Chain<Head, Tail, MID> {
+        pub const fn new(head: Head, tail: Tail) -> Self {
+            Self { head, tail }
         }
     }
 
-    fn forward_with_workspace(&self, input: &[Float; INPUT], workspace: &mut Self::Workspace) {
-        self.head.forward(input, workspace.activation.as_mut());
+    pub trait AppendLayer<Next, const NEXT_OUTPUT: usize>: Sized {
+        type Output;
+        fn then(self, next: Next) -> Self::Output;
     }
 
-    fn output(workspace: &Self::Workspace) -> &[Float; OUTPUT] {
-        workspace.activation.as_ref()
-    }
+    impl<Next, const NEXT_OUTPUT: usize> AppendLayer<Next, NEXT_OUTPUT> for End {
+        type Output = Chain<Next, End, NEXT_OUTPUT>;
 
-    fn set_output_grad(workspace: &mut Self::Workspace, grad: &[Float; OUTPUT]) {
-        workspace.gradient.copy_from_slice(grad);
-    }
-
-    fn backward_with_workspace(
-        &mut self,
-        input: &[Float; INPUT],
-        input_grad: &mut [Float; INPUT],
-        workspace: &mut Self::Workspace,
-    ) {
-        self.head.backward(
-            input,
-            workspace.activation.as_ref(),
-            workspace.gradient.as_ref(),
-            input_grad,
-        );
-    }
-
-    fn zero_grad(&mut self) {
-        self.head.zero_grad();
-    }
-
-    fn apply_gradients<O: Optimizer>(
-        &mut self,
-        optimizer: &mut O,
-        slot: &mut usize,
-        scale: Float,
-    ) {
-        self.head.apply_gradients(optimizer, slot, scale);
-    }
-}
-
-impl<Head, Tail, const INPUT: usize, const MID: usize, const OUTPUT: usize>
-    ModuleChain<INPUT, OUTPUT> for Chain<Head, Tail, MID>
-where
-    Head: Layer<INPUT, MID>,
-    Tail: ModuleChain<MID, OUTPUT>,
-{
-    type Workspace = ChainWorkspace<MID, Tail::Workspace>;
-
-    fn workspace(&self) -> Self::Workspace {
-        ChainWorkspace {
-            activation: Box::new([0.0; MID]),
-            gradient: Box::new([0.0; MID]),
-            tail: self.tail.workspace(),
+        fn then(self, next: Next) -> Self::Output {
+            Chain::new(next, End)
         }
     }
 
-    fn forward_with_workspace(&self, input: &[Float; INPUT], workspace: &mut Self::Workspace) {
-        self.head.forward(input, workspace.activation.as_mut());
-        self.tail
-            .forward_with_workspace(workspace.activation.as_ref(), &mut workspace.tail);
+    impl<Head, Tail, const MID: usize, Next, const NEXT_OUTPUT: usize>
+        AppendLayer<Next, NEXT_OUTPUT> for Chain<Head, Tail, MID>
+    where
+        Tail: AppendLayer<Next, NEXT_OUTPUT>,
+    {
+        type Output = Chain<Head, <Tail as AppendLayer<Next, NEXT_OUTPUT>>::Output, MID>;
+
+        fn then(self, next: Next) -> Self::Output {
+            Chain::new(self.head, self.tail.then(next))
+        }
     }
 
-    fn output(workspace: &Self::Workspace) -> &[Float; OUTPUT] {
-        Tail::output(&workspace.tail)
+    #[derive(Debug)]
+    pub struct TerminalWorkspace<const OUT: usize> {
+        activation: Box<[Float; OUT]>,
+        gradient: Box<[Float; OUT]>,
     }
 
-    fn set_output_grad(workspace: &mut Self::Workspace, grad: &[Float; OUTPUT]) {
-        Tail::set_output_grad(&mut workspace.tail, grad);
+    #[derive(Debug)]
+    pub struct ChainWorkspace<const MID: usize, TailWorkspace> {
+        activation: Box<[Float; MID]>,
+        gradient: Box<[Float; MID]>,
+        tail: TailWorkspace,
     }
 
-    fn backward_with_workspace(
-        &mut self,
-        input: &[Float; INPUT],
-        input_grad: &mut [Float; INPUT],
-        workspace: &mut Self::Workspace,
-    ) {
-        self.tail.backward_with_workspace(
-            workspace.activation.as_ref(),
-            workspace.gradient.as_mut(),
-            &mut workspace.tail,
+    #[derive(Debug)]
+    pub struct StackWorkspace<BodyWorkspace, const INPUT: usize> {
+        body: BodyWorkspace,
+        input_grad: Box<[Float; INPUT]>,
+    }
+
+    pub trait ModuleChain<const INPUT: usize, const OUTPUT: usize> {
+        type Workspace;
+
+        fn workspace(&self) -> Self::Workspace;
+        fn forward_with_workspace(&self, input: &[Float; INPUT], workspace: &mut Self::Workspace);
+        fn output(workspace: &Self::Workspace) -> &[Float; OUTPUT];
+        fn set_output_grad(workspace: &mut Self::Workspace, grad: &[Float; OUTPUT]);
+        fn backward_with_workspace(
+            &mut self,
+            input: &[Float; INPUT],
+            input_grad: &mut [Float; INPUT],
+            workspace: &mut Self::Workspace,
         );
-        self.head.backward(
-            input,
-            workspace.activation.as_ref(),
-            workspace.gradient.as_ref(),
-            input_grad,
-        );
+        fn zero_grad(&mut self);
+        fn apply_gradients(&mut self, optimizer: &mut dyn Optimizer, slot: &mut usize, scale: Float);
     }
 
-    fn zero_grad(&mut self) {
-        self.head.zero_grad();
-        self.tail.zero_grad();
+    impl<Head, const INPUT: usize, const OUTPUT: usize> ModuleChain<INPUT, OUTPUT>
+        for Chain<Head, End, OUTPUT>
+    where
+        Head: Layer<INPUT, OUTPUT>,
+    {
+        type Workspace = TerminalWorkspace<OUTPUT>;
+
+        fn workspace(&self) -> Self::Workspace {
+            TerminalWorkspace {
+                activation: Box::new([0.0; OUTPUT]),
+                gradient: Box::new([0.0; OUTPUT]),
+            }
+        }
+
+        fn forward_with_workspace(&self, input: &[Float; INPUT], workspace: &mut Self::Workspace) {
+            self.head.forward(input, workspace.activation.as_mut());
+        }
+
+        fn output(workspace: &Self::Workspace) -> &[Float; OUTPUT] {
+            workspace.activation.as_ref()
+        }
+
+        fn set_output_grad(workspace: &mut Self::Workspace, grad: &[Float; OUTPUT]) {
+            workspace.gradient.copy_from_slice(grad);
+        }
+
+        fn backward_with_workspace(
+            &mut self,
+            input: &[Float; INPUT],
+            input_grad: &mut [Float; INPUT],
+            workspace: &mut Self::Workspace,
+        ) {
+            self.head.backward(
+                input,
+                workspace.activation.as_ref(),
+                workspace.gradient.as_ref(),
+                input_grad,
+            );
+        }
+
+        fn zero_grad(&mut self) {
+            self.head.zero_grad();
+        }
+
+        fn apply_gradients(
+            &mut self,
+            optimizer: &mut dyn Optimizer,
+            slot: &mut usize,
+            scale: Float,
+        ) {
+            self.head.apply_gradients(optimizer, slot, scale);
+        }
     }
 
-    fn apply_gradients<O: Optimizer>(
-        &mut self,
-        optimizer: &mut O,
-        slot: &mut usize,
-        scale: Float,
-    ) {
-        self.head.apply_gradients(optimizer, slot, scale);
-        self.tail.apply_gradients(optimizer, slot, scale);
+    impl<Head, Tail, const INPUT: usize, const MID: usize, const OUTPUT: usize>
+        ModuleChain<INPUT, OUTPUT> for Chain<Head, Tail, MID>
+    where
+        Head: Layer<INPUT, MID>,
+        Tail: ModuleChain<MID, OUTPUT>,
+    {
+        type Workspace = ChainWorkspace<MID, Tail::Workspace>;
+
+        fn workspace(&self) -> Self::Workspace {
+            ChainWorkspace {
+                activation: Box::new([0.0; MID]),
+                gradient: Box::new([0.0; MID]),
+                tail: self.tail.workspace(),
+            }
+        }
+
+        fn forward_with_workspace(&self, input: &[Float; INPUT], workspace: &mut Self::Workspace) {
+            self.head.forward(input, workspace.activation.as_mut());
+            self.tail
+                .forward_with_workspace(workspace.activation.as_ref(), &mut workspace.tail);
+        }
+
+        fn output(workspace: &Self::Workspace) -> &[Float; OUTPUT] {
+            Tail::output(&workspace.tail)
+        }
+
+        fn set_output_grad(workspace: &mut Self::Workspace, grad: &[Float; OUTPUT]) {
+            Tail::set_output_grad(&mut workspace.tail, grad);
+        }
+
+        fn backward_with_workspace(
+            &mut self,
+            input: &[Float; INPUT],
+            input_grad: &mut [Float; INPUT],
+            workspace: &mut Self::Workspace,
+        ) {
+            self.tail.backward_with_workspace(
+                workspace.activation.as_ref(),
+                workspace.gradient.as_mut(),
+                &mut workspace.tail,
+            );
+            self.head.backward(
+                input,
+                workspace.activation.as_ref(),
+                workspace.gradient.as_ref(),
+                input_grad,
+            );
+        }
+
+        fn zero_grad(&mut self) {
+            self.head.zero_grad();
+            self.tail.zero_grad();
+        }
+
+        fn apply_gradients(
+            &mut self,
+            optimizer: &mut dyn Optimizer,
+            slot: &mut usize,
+            scale: Float,
+        ) {
+            self.head.apply_gradients(optimizer, slot, scale);
+            self.tail.apply_gradients(optimizer, slot, scale);
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct Stack<Layers, const INPUT: usize, const OUTPUT: usize>
+    where
+        Layers: ModuleChain<INPUT, OUTPUT>,
+    {
+        layers: Layers,
+    }
+
+    impl<Layers, const INPUT: usize, const OUTPUT: usize> Stack<Layers, INPUT, OUTPUT>
+    where
+        Layers: ModuleChain<INPUT, OUTPUT>,
+    {
+        pub const fn new(layers: Layers) -> Self {
+            Self { layers }
+        }
+
+        pub fn predict(&self, input: &[Float; INPUT]) -> [Float; OUTPUT] {
+            let mut workspace = StackWorkspace {
+                body: self.layers.workspace(),
+                input_grad: Box::new([0.0; INPUT]),
+            };
+            self.layers.forward_with_workspace(input, &mut workspace.body);
+            let mut result = [0.0; OUTPUT];
+            result.copy_from_slice(Layers::output(&workspace.body));
+            result
+        }
+
+        pub fn fit_with_loss(
+            &mut self,
+            samples: &[Sample<INPUT, OUTPUT>],
+            loss_fn: &dyn LossFunction<OUTPUT>,
+            mut config: TrainConfig,
+        ) -> Float {
+            if samples.is_empty() || config.epochs == 0 {
+                return 0.0;
+            }
+
+            let batch_size = config.batch_size.max(1);
+            let mut workspace = StackWorkspace {
+                body: self.layers.workspace(),
+                input_grad: Box::new([0.0; INPUT]),
+            };
+            let mut order = (0..samples.len()).collect::<Vec<_>>();
+            let mut shuffler = config.shuffle_seed.map(StdRng::seed_from_u64);
+            let mut total_loss = 0.0;
+            let mut steps = 0usize;
+
+            for _ in 0..config.epochs {
+                if let Some(rng) = shuffler.as_mut() {
+                    order.shuffle(rng);
+                }
+
+                for batch in order.chunks(batch_size) {
+                    self.layers.zero_grad();
+                    let mut batch_loss = 0.0;
+
+                    for &sample_idx in batch {
+                        let sample = &samples[sample_idx];
+                        self.layers
+                            .forward_with_workspace(&sample.input, &mut workspace.body);
+                        let mut grad = [0.0; OUTPUT];
+                        let loss =
+                            loss_fn.loss_and_grad(Layers::output(&workspace.body), &sample.target, &mut grad);
+                        Layers::set_output_grad(&mut workspace.body, &grad);
+                        self.layers.backward_with_workspace(
+                            &sample.input,
+                            workspace.input_grad.as_mut(),
+                            &mut workspace.body,
+                        );
+                        batch_loss += loss;
+                    }
+
+                    config.optimizer_mut().begin_step();
+                    let mut slot = 0usize;
+                    self.layers.apply_gradients(
+                        config.optimizer_mut(),
+                        &mut slot,
+                        1.0 / batch.len() as Float,
+                    );
+                    total_loss += batch_loss / batch.len() as Float;
+                    steps += 1;
+                }
+            }
+
+            total_loss / steps as Float
+        }
+    }
+
+    pub trait ModelRuntime<const INPUT: usize, const OUTPUT: usize>: fmt::Debug {
+        fn predict(&self, input: &[Float; INPUT]) -> [Float; OUTPUT];
+        fn fit_with_loss(
+            &mut self,
+            samples: &[Sample<INPUT, OUTPUT>],
+            loss_fn: &dyn LossFunction<OUTPUT>,
+            config: TrainConfig,
+        ) -> Float;
+    }
+
+    impl<Layers, const INPUT: usize, const OUTPUT: usize> ModelRuntime<INPUT, OUTPUT>
+        for Stack<Layers, INPUT, OUTPUT>
+    where
+        Layers: ModuleChain<INPUT, OUTPUT> + fmt::Debug + 'static,
+    {
+        fn predict(&self, input: &[Float; INPUT]) -> [Float; OUTPUT] {
+            Stack::predict(self, input)
+        }
+
+        fn fit_with_loss(
+            &mut self,
+            samples: &[Sample<INPUT, OUTPUT>],
+            loss_fn: &dyn LossFunction<OUTPUT>,
+            config: TrainConfig,
+        ) -> Float {
+            Stack::fit_with_loss(self, samples, loss_fn, config)
+        }
     }
 }
 
-#[derive(Debug)]
-pub struct Sequential<Layers, const INPUT: usize, const OUTPUT: usize>
-where
-    Layers: ModuleChain<INPUT, OUTPUT>,
-{
-    layers: Layers,
+pub struct Sequential<const INPUT: usize, const OUTPUT: usize> {
+    inner: Box<dyn private::ModelRuntime<INPUT, OUTPUT>>,
 }
 
-impl<Layers, const INPUT: usize, const OUTPUT: usize> Sequential<Layers, INPUT, OUTPUT>
-where
-    Layers: ModuleChain<INPUT, OUTPUT>,
-{
-    pub const fn new(layers: Layers) -> Self {
-        Self { layers }
+impl<const INPUT: usize, const OUTPUT: usize> fmt::Debug for Sequential<INPUT, OUTPUT> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Sequential")
+            .field("input", &INPUT)
+            .field("output", &OUTPUT)
+            .finish()
     }
+}
 
-    pub fn layers(&self) -> &Layers {
-        &self.layers
-    }
-
-    pub fn layers_mut(&mut self) -> &mut Layers {
-        &mut self.layers
-    }
-
-    pub fn workspace(&self) -> SequentialWorkspace<Layers::Workspace, INPUT> {
-        SequentialWorkspace {
-            body: self.layers.workspace(),
-            input_grad: Box::new([0.0; INPUT]),
+impl<const INPUT: usize, const OUTPUT: usize> Sequential<INPUT, OUTPUT> {
+    fn from_runtime<R>(runtime: R) -> Self
+    where
+        R: private::ModelRuntime<INPUT, OUTPUT> + 'static,
+    {
+        Self {
+            inner: Box::new(runtime),
         }
     }
 
     pub fn predict(&self, input: &[Float; INPUT]) -> [Float; OUTPUT] {
-        let mut workspace = self.workspace();
-        self.predict_with_workspace(input, &mut workspace)
-    }
-
-    pub fn predict_with_workspace(
-        &self,
-        input: &[Float; INPUT],
-        workspace: &mut SequentialWorkspace<Layers::Workspace, INPUT>,
-    ) -> [Float; OUTPUT] {
-        self.layers.forward_with_workspace(input, &mut workspace.body);
-        let mut result = [0.0; OUTPUT];
-        result.copy_from_slice(Layers::output(&workspace.body));
-        result
+        self.inner.predict(input)
     }
 
     pub fn predict_in_place(&self, input: &[Float; INPUT]) -> [Float; OUTPUT] {
         self.predict(input)
     }
 
-    pub fn fit<O: Optimizer>(
-        &mut self,
-        samples: &[Sample<INPUT, OUTPUT>],
-        optimizer: &mut O,
-        config: TrainConfig,
-    ) -> Float {
-        self.fit_with_loss(samples, &MeanSquaredError, optimizer, config)
+    pub fn fit(&mut self, samples: &[Sample<INPUT, OUTPUT>], config: TrainConfig) -> Float {
+        self.fit_with_loss(samples, &MeanSquaredError, config)
     }
 
-    pub fn fit_with_loss<L: Loss<OUTPUT>, O: Optimizer>(
+    pub fn fit_with_loss(
         &mut self,
         samples: &[Sample<INPUT, OUTPUT>],
-        loss_fn: &L,
-        optimizer: &mut O,
+        loss_fn: &dyn LossFunction<OUTPUT>,
         config: TrainConfig,
     ) -> Float {
-        if samples.is_empty() || config.epochs == 0 {
-            return 0.0;
-        }
+        self.inner.fit_with_loss(samples, loss_fn, config)
+    }
+}
 
-        let batch_size = config.batch_size.max(1);
-        let mut workspace = self.workspace();
-        let mut order = (0..samples.len()).collect::<Vec<_>>();
-        let mut shuffler = config.shuffle_seed.map(StdRng::seed_from_u64);
-        let mut total_loss = 0.0;
-        let mut steps = 0usize;
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ModelBuilder;
 
-        for _ in 0..config.epochs {
-            if let Some(rng) = shuffler.as_mut() {
-                order.shuffle(rng);
-            }
-
-            for batch in order.chunks(batch_size) {
-                self.layers.zero_grad();
-                let mut batch_loss = 0.0;
-
-                for &sample_idx in batch {
-                    let sample = &samples[sample_idx];
-                    self.layers
-                        .forward_with_workspace(&sample.input, &mut workspace.body);
-                    let (grad, loss) =
-                        loss_fn.loss_and_grad(Layers::output(&workspace.body), &sample.target);
-                    Layers::set_output_grad(&mut workspace.body, &grad);
-                    self.layers.backward_with_workspace(
-                        &sample.input,
-                        workspace.input_grad.as_mut(),
-                        &mut workspace.body,
-                    );
-                    batch_loss += loss;
-                }
-
-                optimizer.begin_step();
-                let mut slot = 0usize;
-                self.layers
-                    .apply_gradients(optimizer, &mut slot, 1.0 / batch.len() as Float);
-                total_loss += batch_loss / batch.len() as Float;
-                steps += 1;
-            }
-        }
-
-        total_loss / steps as Float
+impl ModelBuilder {
+    pub const fn new() -> Self {
+        Self
     }
 
-    pub fn fit_default<O: Optimizer>(
-        &mut self,
-        samples: &[Sample<INPUT, OUTPUT>],
-        optimizer: &mut O,
-    ) -> Float {
-        self.fit(samples, optimizer, TrainConfig::default())
+    pub fn input<const N: usize>(self) -> VectorBuilder<private::End, N, N> {
+        VectorBuilder {
+            layers: private::End,
+        }
+    }
+
+    pub fn image_input<const C: usize, const H: usize, const W: usize>(
+        self,
+    ) -> ImageBuilder<private::End, { C * H * W }, C, H, W>
+    where
+        [(); C * H * W]:,
+    {
+        ImageBuilder {
+            layers: private::End,
+        }
+    }
+}
+
+pub struct VectorBuilder<Layers, const INPUT: usize, const CURRENT: usize> {
+    layers: Layers,
+}
+
+impl<Layers, const INPUT: usize, const CURRENT: usize> fmt::Debug
+    for VectorBuilder<Layers, INPUT, CURRENT>
+where
+    Layers: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VectorBuilder")
+            .field("input", &INPUT)
+            .field("current", &CURRENT)
+            .finish()
+    }
+}
+
+impl<Layers, const INPUT: usize, const CURRENT: usize> VectorBuilder<Layers, INPUT, CURRENT> {
+    pub const fn flatten(self) -> Self {
+        self
+    }
+
+    pub fn dense<const NEXT: usize>(
+        self,
+    ) -> VectorBuilder<
+        <Layers as private::AppendLayer<DenseLayer<CURRENT, NEXT>, NEXT>>::Output,
+        INPUT,
+        NEXT,
+    >
+    where
+        Layers: private::AppendLayer<DenseLayer<CURRENT, NEXT>, NEXT>,
+    {
+        VectorBuilder {
+            layers: self.layers.then(DenseLayer::<CURRENT, NEXT>::init()),
+        }
+    }
+
+    pub fn relu(
+        self,
+    ) -> VectorBuilder<
+        <Layers as private::AppendLayer<ReLU<CURRENT>, CURRENT>>::Output,
+        INPUT,
+        CURRENT,
+    >
+    where
+        Layers: private::AppendLayer<ReLU<CURRENT>, CURRENT>,
+    {
+        VectorBuilder {
+            layers: self.layers.then(ReLU::<CURRENT>::init()),
+        }
+    }
+
+    pub fn sigmoid(
+        self,
+    ) -> VectorBuilder<
+        <Layers as private::AppendLayer<Sigmoid<CURRENT>, CURRENT>>::Output,
+        INPUT,
+        CURRENT,
+    >
+    where
+        Layers: private::AppendLayer<Sigmoid<CURRENT>, CURRENT>,
+    {
+        VectorBuilder {
+            layers: self.layers.then(Sigmoid::<CURRENT>::init()),
+        }
+    }
+
+    pub fn build(self) -> Sequential<INPUT, CURRENT>
+    where
+        Layers: private::ModuleChain<INPUT, CURRENT> + fmt::Debug + 'static,
+    {
+        Sequential::from_runtime(private::Stack::new(self.layers))
+    }
+}
+
+pub struct ImageBuilder<
+    Layers,
+    const INPUT: usize,
+    const C: usize,
+    const H: usize,
+    const W: usize,
+> {
+    layers: Layers,
+}
+
+impl<Layers, const INPUT: usize, const C: usize, const H: usize, const W: usize> fmt::Debug
+    for ImageBuilder<Layers, INPUT, C, H, W>
+where
+    Layers: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ImageBuilder")
+            .field("input", &INPUT)
+            .field("channels", &C)
+            .field("height", &H)
+            .field("width", &W)
+            .finish()
+    }
+}
+
+impl<Layers, const INPUT: usize, const C: usize, const H: usize, const W: usize>
+    ImageBuilder<Layers, INPUT, C, H, W>
+where
+    [(); INPUT]:,
+{
+    pub fn relu(self) -> ImageBuilder<
+        <Layers as private::AppendLayer<ReLU<{ C * H * W }>, { C * H * W }>>::Output,
+        INPUT,
+        C,
+        H,
+        W,
+    >
+    where
+        [(); C * H * W]:,
+        Layers: private::AppendLayer<ReLU<{ C * H * W }>, { C * H * W }>,
+    {
+        ImageBuilder {
+            layers: self.layers.then(ReLU::<{ C * H * W }>::init()),
+        }
+    }
+
+    pub fn sigmoid(self) -> ImageBuilder<
+        <Layers as private::AppendLayer<Sigmoid<{ C * H * W }>, { C * H * W }>>::Output,
+        INPUT,
+        C,
+        H,
+        W,
+    >
+    where
+        [(); C * H * W]:,
+        Layers: private::AppendLayer<Sigmoid<{ C * H * W }>, { C * H * W }>,
+    {
+        ImageBuilder {
+            layers: self.layers.then(Sigmoid::<{ C * H * W }>::init()),
+        }
+    }
+
+    pub fn conv<
+        const OC: usize,
+        const FH: usize,
+        const FW: usize,
+        const S: usize,
+        const P: usize,
+    >(
+        self,
+    ) -> ImageBuilder<
+        <Layers as private::AppendLayer<
+            Conv<W, H, C, FH, FW, OC, S, P>,
+            { OC * conv_out_dim(H, P, FH, S) * conv_out_dim(W, P, FW, S) },
+        >>::Output,
+        INPUT,
+        OC,
+        { conv_out_dim(H, P, FH, S) },
+        { conv_out_dim(W, P, FW, S) },
+    >
+    where
+        [(); C * H * W]:,
+        [(); OC * conv_out_dim(H, P, FH, S) * conv_out_dim(W, P, FW, S)]:,
+        (): ConvGeometryIsValid<H, W, FH, FW, S, P>,
+        Layers: private::AppendLayer<
+            Conv<W, H, C, FH, FW, OC, S, P>,
+            { OC * conv_out_dim(H, P, FH, S) * conv_out_dim(W, P, FW, S) },
+        >,
+    {
+        ImageBuilder {
+            layers: self.layers.then(Conv::<W, H, C, FH, FW, OC, S, P>::init()),
+        }
+    }
+
+    pub fn flatten(self) -> VectorBuilder<Layers, INPUT, { C * H * W }>
+    where
+        [(); C * H * W]:,
+    {
+        VectorBuilder { layers: self.layers }
+    }
+
+    pub fn build(self) -> Sequential<INPUT, { C * H * W }>
+    where
+        [(); C * H * W]:,
+        Layers: private::ModuleChain<INPUT, { C * H * W }> + fmt::Debug + 'static,
+    {
+        Sequential::from_runtime(private::Stack::new(self.layers))
     }
 }
 
@@ -980,42 +1255,40 @@ mod tests {
     }
 
     #[test]
-    fn sequential_training_decreases_loss_with_seeded_shuffle() {
-        let layers = Chain::<_, _, 8>::new(
-            DenseLayer::<1, 8>::seeded(3),
-            Chain::<_, _, 8>::new(
-                ReLU::<8>::init(),
-                Chain::<_, _, 1>::new(DenseLayer::<8, 1>::seeded(4), End),
-            ),
-        );
-        let mut model = Sequential::new(layers);
+    fn builder_training_decreases_loss_with_seeded_shuffle() {
+        let mut model = ModelBuilder::new()
+            .input::<1>()
+            .dense::<8>()
+            .relu()
+            .dense::<1>()
+            .build();
         let samples = (-20..=20)
             .map(|i| {
                 let x = i as Float / 10.0;
                 Sample::new([x], [2.0 * x - 0.5])
             })
             .collect::<Vec<_>>();
-        let mut optimizer = Adam::new(0.03);
-        let config = TrainConfig {
-            epochs: 250,
-            batch_size: 8,
-            shuffle_seed: Some(9),
-        };
+        let config = TrainConfig::adam(0.03)
+            .epochs(250)
+            .batch_size(8)
+            .shuffle_seed(9);
 
         let before = samples
             .iter()
             .map(|sample| {
                 let output = model.predict(&sample.input);
-                MeanSquaredError.loss_and_grad(&output, &sample.target).1
+                let mut grad = [0.0; 1];
+                MeanSquaredError.loss_and_grad(&output, &sample.target, &mut grad)
             })
             .sum::<Float>()
             / samples.len() as Float;
-        let during = model.fit(&samples, &mut optimizer, config);
+        let during = model.fit(&samples, config);
         let after = samples
             .iter()
             .map(|sample| {
                 let output = model.predict(&sample.input);
-                MeanSquaredError.loss_and_grad(&output, &sample.target).1
+                let mut grad = [0.0; 1];
+                MeanSquaredError.loss_and_grad(&output, &sample.target, &mut grad)
             })
             .sum::<Float>()
             / samples.len() as Float;

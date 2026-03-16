@@ -1,17 +1,16 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use tml::{Float, Sample, Sgd, TrainConfig, network};
+use tml::{Float, Sample, TrainConfig, network};
 
 #[test]
-fn type_contains_expected_layers() {
+fn network_macro_returns_public_sequential_runtime() {
     let model = network! {
         input(4) -> dense(3) -> relu -> dense(2) -> output
     };
     let ty = std::any::type_name_of_val(&model);
-    assert!(ty.contains("DenseLayer<4, 3>"), "type = {ty}");
-    assert!(ty.contains("ReLU<3>"), "type = {ty}");
-    assert!(ty.contains("DenseLayer<3, 2>"), "type = {ty}");
+    assert!(ty.contains("Sequential<4, 2>"), "type = {ty}");
+    assert!(!ty.contains("Chain<"), "type = {ty}");
 }
 
 #[test]
@@ -20,15 +19,7 @@ fn zero_epochs_returns_zero_loss() {
         input(1) -> dense(1) -> output
     };
     let samples = vec![Sample::new([1.0], [5.0]), Sample::new([2.0], [8.0])];
-    let mut optimizer = Sgd::new(0.1);
-    let loss = model.fit(
-        &samples,
-        &mut optimizer,
-        TrainConfig {
-            epochs: 0,
-            ..TrainConfig::default()
-        },
-    );
+    let loss = model.fit(&samples, TrainConfig::sgd(0.1).epochs(0));
     assert_eq!(loss, 0.0);
 }
 

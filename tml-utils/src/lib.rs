@@ -16,6 +16,30 @@ pub trait ReshapePreservesElementCount<const FROM: usize, const TO: usize> {}
 
 impl<const N: usize> ReshapePreservesElementCount<N, N> for () {}
 
+#[doc(hidden)]
+pub trait ConvGeometryIsValid<
+    const H: usize,
+    const W: usize,
+    const FH: usize,
+    const FW: usize,
+    const S: usize,
+    const P: usize,
+> {}
+
+impl<
+        const H: usize,
+        const W: usize,
+        const FH: usize,
+        const FW: usize,
+        const S: usize,
+        const P: usize,
+    > ConvGeometryIsValid<H, W, FH, FW, S, P> for ()
+where
+    Assert<{ conv::conv_out_dim(H, P, FH, S) > 0 }>: IsTrue,
+    Assert<{ conv::conv_out_dim(W, P, FW, S) > 0 }>: IsTrue,
+{
+}
+
 pub mod shape;
 mod tensor;
 
@@ -25,9 +49,9 @@ pub mod data;
 pub use autodiff::{EvalTape, ExprGraph, Gradients, NodeId, Op, ReverseTape, Tape, TapeError, Var};
 pub use data::Sample;
 pub use network::{
-    Adam, AppendLayer, Chain, DenseLayer, End, Flatten, Initializer, IntoChain, KaimingUniform,
-    Layer, LayerDims, Loss, MeanSquaredError, Optimizer, ReLU, Sequential, Sgd, Sigmoid,
-    TrainConfig, Uniform, XavierUniform, mse_loss,
+    Adam, DenseLayer, Flatten, Initializer, KaimingUniform, Layer, LayerDims, LossFunction,
+    MeanSquaredError, ModelBuilder, Optimizer, ReLU, Sequential, Sgd, Sigmoid, TrainConfig,
+    Uniform, XavierUniform, mse_loss,
 };
 pub use shape::TensorShape;
 #[doc(hidden)]

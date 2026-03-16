@@ -5,34 +5,36 @@ use quote::quote;
 
 #[derive(Debug, Clone)]
 pub struct LayerIr {
-    pub layer_type: TokenStream2,
-    pub out_size: TokenStream2,
+    pub builder_step: TokenStream2,
 }
 
 #[derive(Debug, Clone)]
 pub struct NetworkIr {
+    pub input_builder: TokenStream2,
     pub layers: Vec<LayerIr>,
     pub conv_checks: Vec<TokenStream2>,
 }
 
 impl NetworkIr {
     pub fn lower(ast: NetworkAst) -> syn::Result<Self> {
-        let input_shape = match ast.input {
-            InputShape::Vec { n } => ShapeSpec::Vec { n: quote! { #n } },
-            InputShape::Image(image) => ShapeSpec::Image {
-                c: {
-                    let c = &image.c;
-                    quote! { #c }
-                },
-                h: {
-                    let h = &image.h;
-                    quote! { #h }
-                },
-                w: {
-                    let w = &image.w;
-                    quote! { #w }
-                },
-            },
+        let (input_shape, input_builder) = match ast.input {
+            InputShape::Vec { n } => (
+                ShapeSpec::Vec { n: quote! { #n } },
+                quote! { ::tml::network::ModelBuilder::new().input::<{ #n }>() },
+            ),
+            InputShape::Image(image) => {
+                let c = &image.c;
+                let h = &image.h;
+                let w = &image.w;
+                (
+                    ShapeSpec::Image {
+                        c: quote! { #c },
+                        h: quote! { #h },
+                        w: quote! { #w },
+                    },
+                    quote! { ::tml::network::ModelBuilder::new().image_input::<{ #c }, { #h }, { #w }>() },
+                )
+            }
         };
 
         let mut current_shape = input_shape;
@@ -40,13 +42,13 @@ impl NetworkIr {
         let mut conv_checks = Vec::with_capacity(ast.layers.len());
 
         for layer in &ast.layers {
-            let (next_shape, layer_type) = match &layer.kind {
+            let (next_shape, builder_step) = match &layer.kind {
                 LayerSpecKind::Dense { output } => match current_shape {
-                    ShapeSpec::Vec { n } => {
+                    ShapeSpec::Vec { .. } => {
                         let output = quote! { #output };
                         (
                             ShapeSpec::Vec { n: output.clone() },
-                            quote! { ::tml::network::DenseLayer<{ #n }, { #output }> },
+                            quote! { .dense::<{ #output }>() },
                         )
                     }
                     ShapeSpec::Image { .. } => {
@@ -57,23 +59,21 @@ impl NetworkIr {
                     }
                 },
                 LayerSpecKind::ReLU => {
-                    let size = current_shape.size_expr();
-                    (current_shape, quote! { ::tml::network::ReLU<{ #size }> })
+                    (current_shape, quote! { .relu() })
                 }
                 LayerSpecKind::Sigmoid => {
-                    let size = current_shape.size_expr();
-                    (current_shape, quote! { ::tml::network::Sigmoid<{ #size }> })
+                    (current_shape, quote! { .sigmoid() })
                 }
                 LayerSpecKind::Flatten => {
                     let size = current_shape.size_expr();
                     (
                         ShapeSpec::Vec { n: size.clone() },
-                        quote! { ::tml::network::Flatten<{ #size }> },
+                        quote! { .flatten() },
                     )
                 }
                 LayerSpecKind::Conv(conv) => {
                     match &current_shape {
-                        ShapeSpec::Image { c, h, w } => {
+                        ShapeSpec::Image { c: _, h, w } => {
                             let out_channels = {
                                 let out_channels = &conv.out_channels;
                                 quote! { #out_channels }
@@ -116,7 +116,7 @@ impl NetworkIr {
                                     w: out_w,
                                 },
                                 quote! {
-                                    ::tml::conv::Conv<{ #w }, { #h }, { #c }, { #kernel_h }, { #kernel_w }, { #out_channels }, { #stride }, { #padding }>
+                                    .conv::<{ #out_channels }, { #kernel_h }, { #kernel_w }, { #stride }, { #padding }>()
                                 },
                             )
                         }
@@ -130,15 +130,12 @@ impl NetworkIr {
                 }
             };
 
-            let out_size = next_shape.size_expr();
-            layers.push(LayerIr {
-                layer_type,
-                out_size: out_size.clone(),
-            });
+            layers.push(LayerIr { builder_step });
             current_shape = next_shape;
         }
 
         Ok(Self {
+            input_builder,
             layers,
             conv_checks,
         })

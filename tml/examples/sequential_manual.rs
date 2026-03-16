@@ -1,14 +1,12 @@
-use tml::{Adam, Chain, DenseLayer, End, Float, ReLU, Sample, Sequential, TrainConfig};
+use tml::{Float, ModelBuilder, Sample, TrainConfig};
 
 fn main() {
-    let layers = Chain::<_, _, 8>::new(
-        DenseLayer::<1, 8>::seeded(3),
-        Chain::<_, _, 8>::new(
-            ReLU::<8>::init(),
-            Chain::<_, _, 1>::new(DenseLayer::<8, 1>::seeded(4), End),
-        ),
-    );
-    let mut model = Sequential::new(layers);
+    let mut model = ModelBuilder::new()
+        .input::<1>()
+        .dense::<8>()
+        .relu()
+        .dense::<1>()
+        .build();
 
     let samples = (-20..=20)
         .map(|i| {
@@ -17,14 +15,12 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
-    let mut optimizer = Adam::new(0.03);
-    let config = TrainConfig {
-        epochs: 250,
-        batch_size: 8,
-        shuffle_seed: Some(9),
-    };
+    let config = TrainConfig::adam(0.03)
+        .epochs(250)
+        .batch_size(8)
+        .shuffle_seed(9);
 
-    let loss = model.fit(&samples, &mut optimizer, config);
+    let loss = model.fit(&samples, config);
     println!("final loss: {loss}");
 
     for x in [-2.0, 0.0, 1.5, 4.0] {

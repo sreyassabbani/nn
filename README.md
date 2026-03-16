@@ -39,27 +39,25 @@ Nightly-only (until `generic_const_exprs` stabilizes). In your crate root:
 
 ### Network DSL
 
-`network!` is syntax sugar for building a typed `Sequential` model. Training now goes through an explicit optimizer:
+`network!` is syntax sugar for building a typed `Sequential` model. The public builder API is the core runtime surface, and `TrainConfig` owns the optimizer:
 ```rs
-use tml::{Sgd, TrainConfig, network};
+use tml::{TrainConfig, network};
 
 let mut net = network! {
   input(1) -> dense(8) -> relu -> dense(1) -> output
 };
 
-let mut optimizer = Sgd::new(0.05);
 let samples = [
-  tml::Sample::new([0.0], [1.0]),
-  tml::Sample::new([1.0], [3.0]),
-];
+  ([0.0], [1.0]),
+  ([1.0], [3.0]),
+].map(tml::Sample::from);
+
 let loss = net.fit(
   &samples,
-  &mut optimizer,
-  TrainConfig {
-    epochs: 200,
-    batch_size: 2,
-    shuffle_seed: Some(7),
-  },
+  TrainConfig::sgd(0.05)
+    .epochs(200)
+    .batch_size(2)
+    .shuffle_seed(7),
 );
 let prediction = net.predict(&[0.5]);
 ```
@@ -77,16 +75,14 @@ let logits = net.predict(&[0.0; 3 * 32 * 32]);
 
 You can also build the same runtime manually, without the DSL:
 ```rs
-use tml::{Chain, DenseLayer, End, ReLU, Sequential};
+use tml::ModelBuilder;
 
-let layers = Chain::<_, _, 8>::new(
-  DenseLayer::<1, 8>::init(),
-  Chain::<_, _, 8>::new(
-    ReLU::<8>::init(),
-    Chain::<_, _, 1>::new(DenseLayer::<8, 1>::init(), End),
-  ),
-);
-let net = Sequential::new(layers);
+let net = ModelBuilder::new()
+  .input::<1>()
+  .dense::<8>()
+  .relu()
+  .dense::<1>()
+  .build();
 ```
 
 ### Tensor Algebra

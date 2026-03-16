@@ -1,5 +1,5 @@
 use crate::network::{Initializer, Layer, LayerDims, Optimizer, XavierUniform};
-use crate::{Assert, Float, IsTrue, tensor::Tensor};
+use crate::{ConvGeometryIsValid, Float, tensor::Tensor};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::array;
 
@@ -80,8 +80,7 @@ impl<
 where
     [(); IC * IH * IW]:,
     [(); OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)]:,
-    Assert<{ conv_out_dim(IH, P, FH, S) > 0 }>: IsTrue,
-    Assert<{ conv_out_dim(IW, P, FW, S) > 0 }>: IsTrue,
+    (): ConvGeometryIsValid<IH, IW, FH, FW, S, P>,
 {
     pub fn init() -> Self {
         Self::with_initializer(XavierUniform)
@@ -259,8 +258,7 @@ impl<
 where
     [(); IC * IH * IW]:,
     [(); OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)]:,
-    Assert<{ conv_out_dim(IH, P, FH, S) > 0 }>: IsTrue,
-    Assert<{ conv_out_dim(IW, P, FW, S) > 0 }>: IsTrue,
+    (): ConvGeometryIsValid<IH, IW, FH, FW, S, P>,
 {
     const INPUT: usize = IC * IH * IW;
     const OUTPUT: usize = OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S);
@@ -280,8 +278,7 @@ impl<
 where
     [(); IC * IH * IW]:,
     [(); OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)]:,
-    Assert<{ conv_out_dim(IH, P, FH, S) > 0 }>: IsTrue,
-    Assert<{ conv_out_dim(IW, P, FW, S) > 0 }>: IsTrue,
+    (): ConvGeometryIsValid<IH, IW, FH, FW, S, P>,
 {
     fn forward(
         &self,
@@ -308,12 +305,7 @@ where
         }
     }
 
-    fn apply_gradients<O: Optimizer>(
-        &mut self,
-        optimizer: &mut O,
-        slot: &mut usize,
-        scale: Float,
-    ) {
+    fn apply_gradients(&mut self, optimizer: &mut dyn Optimizer, slot: &mut usize, scale: Float) {
         for filter in &mut self.filters {
             optimizer.update_parameter(
                 *slot,
@@ -394,8 +386,7 @@ where
     [(); FH * FW * IC]:,
     [(); IC * IH * IW]:,
     [(); OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)]:,
-    Assert<{ conv_out_dim(IH, P, FH, S) > 0 }>: IsTrue,
-    Assert<{ conv_out_dim(IW, P, FW, S) > 0 }>: IsTrue,
+    (): ConvGeometryIsValid<IH, IW, FH, FW, S, P>,
 {
     type InputArray = [Float; IC * IH * IW];
     type OutputArray = [Float; OC * conv_out_dim(IH, P, FH, S) * conv_out_dim(IW, P, FW, S)];
