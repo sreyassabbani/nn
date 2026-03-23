@@ -44,21 +44,22 @@ Nightly-only (until `generic_const_exprs` stabilizes). In your crate root:
 use tml::{TrainConfig, network};
 
 let mut net = network! {
-  input(1) -> dense(8) -> relu -> dense(1) -> output
+    input(1) -> dense(8) -> relu -> dense(1) -> output
 };
 
 let samples = [
-  ([0.0], [1.0]),
-  ([1.0], [3.0]),
+    ([0.0], [1.0]),
+    ([1.0], [3.0]),
 ].map(tml::Sample::from);
 
 let loss = net.fit(
-  &samples,
-  TrainConfig::sgd(0.05)
-    .epochs(200)
-    .batch_size(2)
-    .shuffle_seed(7),
+    &samples,
+    TrainConfig::sgd(0.05)
+        .epochs(200)
+        .batch_size(2)
+        .shuffle_seed(7),
 );
+
 let prediction = net.predict(&[0.5]);
 ```
 
@@ -67,7 +68,7 @@ For image inputs, keep `flatten` explicit before dense layers:
 use tml::network;
 
 let net = network! {
-  input(3, 32, 32) -> conv(8, 3, 1, 1) -> relu -> flatten -> dense(10) -> output
+    input(3, 32, 32) -> conv(8, 3, 1, 1) -> relu -> flatten -> dense(10) -> output
 };
 
 let logits = net.predict(&[0.0; 3 * 32 * 32]);
@@ -78,11 +79,11 @@ You can also build the same runtime manually, without the DSL:
 use tml::ModelBuilder;
 
 let net = ModelBuilder::new()
-  .input::<1>()
-  .dense::<8>()
-  .relu()
-  .dense::<1>()
-  .build();
+    .input::<1>()
+    .dense::<8>()
+    .relu()
+    .dense::<1>()
+    .build();
 ```
 
 ### Tensor Algebra
@@ -95,12 +96,18 @@ type Image = shape!(3, 32, 32);
 
 let zeros: Tensor<Image> = Tensor::zeros();
 
-// convert 2x2 grid to 4 flat
-let grid = tensor![[1.0, 2.0], [3.0, 4.0]];
-let flat = grid.reshape::<shape!(4)>();
+let grid = tensor![
+    [1., 2.],
+    [3., 4.]
+];
 
+// convert 2x2 grid to 4 flat
+let flat = grid.as_ref().reshape::<shape!(4)>();
+assert_eq!(flat.as_slice(), &[1., 2., 3., 4.]);
+
+// grab sub-tensors
 let row = grid.get_ref(1);
-assert_eq!(row.as_slice(), &[3.0, 4.0]);
+assert_eq!(row.as_slice(), &[3., 4.]);
 ```
 
 This style is what the public tensor API is optimized around:
@@ -110,11 +117,11 @@ This style is what the public tensor API is optimized around:
 - use `get_ref()` / `get_mut()` when you want borrowed sub-tensors
 - use `reshape::<shape!(...)>()` when you want the same data with a different shape type
 
-The examples in [`tml/examples`](/Users/sreysus/workflow/tml/tml/examples) are a good starting point:
-- [`tensor_basics.rs`](/Users/sreysus/workflow/tml/tml/examples/tensor_basics.rs) shows `shape!`, `Tensor<Shape>`, `TensorRef`, `TensorMut`, literals, indexing, and reshape
-- [`conv.rs`](/Users/sreysus/workflow/tml/tml/examples/conv.rs) shows the typed network DSL on image inputs
-- [`sequential_manual.rs`](/Users/sreysus/workflow/tml/tml/examples/sequential_manual.rs) shows the same training runtime without `network!`
-- [`linear_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/linear_regression.rs) and [`quadratic_regression.rs`](/Users/sreysus/workflow/tml/tml/examples/quadratic_regression.rs) show simple end-to-end training flows
+The examples in [`tml/examples`](tml/examples) are a good starting point:
+- [`tensor_basics.rs`](tml/examples/tensor_basics.rs) shows `shape!`, `Tensor<Shape>`, `TensorRef`, `TensorMut`, literals, indexing, and reshape
+- [`conv.rs`](tml/examples/conv.rs) shows the typed network DSL on image inputs
+- [`sequential_manual.rs`](tml/examples/sequential_manual.rs) shows the same training runtime without `network!`
+- [`linear_regression.rs`](tml/examples/linear_regression.rs) and [`quadratic_regression.rs`](tml/examples/quadratic_regression.rs) show simple end-to-end training flows
 
 ### Automatic differentiation
 

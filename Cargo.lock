@@ -542,7 +542,7 @@ dependencies = [
 
 [[package]]
 name = "tml"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "tml-macro",
@@ -552,7 +552,7 @@ dependencies = [
 
 [[package]]
 name = "tml-macro"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -561,7 +561,7 @@ dependencies = [
 
 [[package]]
 name = "tml-utils"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "rand",
 ]

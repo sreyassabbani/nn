@@ -372,6 +372,14 @@ where
     pub fn mean(&self) -> Float {
         self.0.mean()
     }
+
+    pub fn reshape<NewShape>(self) -> TensorRef<'a, NewShape>
+    where
+        NewShape: TensorShape,
+        (): ReshapePreservesElementCount<{ Shape::SIZE }, { NewShape::SIZE }>,
+    {
+        TensorRef(StorageTensor::from_storage(self.0.storage))
+    }
 }
 
 impl<'a, Shape> TensorMut<'a, Shape>
@@ -417,6 +425,14 @@ where
     pub fn mean(&self) -> Float {
         self.0.mean()
     }
+
+    pub fn reshape<NewShape>(self) -> TensorMut<'a, NewShape>
+    where
+        NewShape: TensorShape,
+        (): ReshapePreservesElementCount<{ Shape::SIZE }, { NewShape::SIZE }>,
+    {
+        TensorMut(StorageTensor::from_storage(self.0.storage))
+    }
 }
 
 impl<Shape> Tensor<Shape>
@@ -436,7 +452,9 @@ where
         let stride = <Shape::Subshape as TensorShape>::SIZE;
         let start = index * stride;
         let end = start + stride;
-        TensorMut(StorageTensor::from_storage(&mut self.as_mut_slice()[start..end]))
+        TensorMut(StorageTensor::from_storage(
+            &mut self.as_mut_slice()[start..end],
+        ))
     }
 
     pub fn get(&self, index: usize) -> Tensor<Shape::Subshape> {
@@ -475,7 +493,9 @@ where
         let stride = <Shape::Subshape as TensorShape>::SIZE;
         let start = index * stride;
         let end = start + stride;
-        TensorMut(StorageTensor::from_storage(&mut self.as_mut_slice()[start..end]))
+        TensorMut(StorageTensor::from_storage(
+            &mut self.as_mut_slice()[start..end],
+        ))
     }
 }
 
@@ -776,5 +796,21 @@ mod tests {
 
         let reshaped = tensor.clone().reshape::<crate::shape!(4, 3, 2)>();
         assert_eq!(tensor.as_slice(), reshaped.as_slice());
+    }
+
+    #[test]
+    fn borrowed_reshape_preserves_view_semantics() {
+        let mut tensor = crate::tensor![[1.0, 2.0], [3.0, 4.0]];
+
+        let flat_ref = tensor.as_ref().reshape::<crate::shape!(4)>();
+        assert_eq!(flat_ref.as_slice(), &[1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(*flat_ref.at([2]), 3.0);
+
+        {
+            let mut flat_mut = tensor.as_mut().reshape::<crate::shape!(4)>();
+            flat_mut.set([3], 9.0);
+        }
+
+        assert_eq!(tensor.as_slice(), &[1.0, 2.0, 3.0, 9.0]);
     }
 }

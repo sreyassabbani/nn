@@ -1,11 +1,18 @@
 [package]
 name = "tml"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
+authors = ["Sreyas Sabbani <sreyas.sabbani@gmail.com>"]
+description = "Experimental, nightly-only, type-safe machine learning library"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/sreyassabbani/tml"
+keywords = ["machine-learning", "tensor", "neural-network"]
+categories = ["science", "mathematics"]
 
 [dependencies]
-tml-utils = { path = "../tml-utils" }
-tml-macro = { path = "../tml-macro" }
+tml-utils = { version = "0.3.0", path = "../tml-utils" }
+tml-macro = { version = "0.3.0", path = "../tml-macro" }
 
 [dev-dependencies]
 criterion = "0.5"

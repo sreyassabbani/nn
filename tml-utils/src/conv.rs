@@ -316,7 +316,12 @@ where
             *slot += 1;
             filter.grads_mut().fill(0.0);
         }
-        optimizer.update_parameter(*slot, self.biases.as_mut_slice(), self.bias_grads.as_slice(), scale);
+        optimizer.update_parameter(
+            *slot,
+            self.biases.as_mut_slice(),
+            self.bias_grads.as_slice(),
+            scale,
+        );
         *slot += 1;
         self.bias_grads.fill(0.0);
     }

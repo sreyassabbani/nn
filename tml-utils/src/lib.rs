@@ -24,16 +24,18 @@ pub trait ConvGeometryIsValid<
     const FW: usize,
     const S: usize,
     const P: usize,
-> {}
+>
+{
+}
 
 impl<
-        const H: usize,
-        const W: usize,
-        const FH: usize,
-        const FW: usize,
-        const S: usize,
-        const P: usize,
-    > ConvGeometryIsValid<H, W, FH, FW, S, P> for ()
+    const H: usize,
+    const W: usize,
+    const FH: usize,
+    const FW: usize,
+    const S: usize,
+    const P: usize,
+> ConvGeometryIsValid<H, W, FH, FW, S, P> for ()
 where
     Assert<{ conv::conv_out_dim(H, P, FH, S) > 0 }>: IsTrue,
     Assert<{ conv::conv_out_dim(W, P, FW, S) > 0 }>: IsTrue,

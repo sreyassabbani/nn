@@ -254,8 +254,12 @@ impl Default for TrainConfig {
 }
 
 pub trait LossFunction<const N: usize>: fmt::Debug {
-    fn loss_and_grad(&self, output: &[Float; N], target: &[Float; N], grad: &mut [Float; N])
-    -> Float;
+    fn loss_and_grad(
+        &self,
+        output: &[Float; N],
+        target: &[Float; N],
+        grad: &mut [Float; N],
+    ) -> Float;
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -303,7 +307,13 @@ pub trait Layer<const IN: usize, const OUT: usize> {
 
     fn zero_grad(&mut self) {}
 
-    fn apply_gradients(&mut self, _optimizer: &mut dyn Optimizer, _slot: &mut usize, _scale: Float) {}
+    fn apply_gradients(
+        &mut self,
+        _optimizer: &mut dyn Optimizer,
+        _slot: &mut usize,
+        _scale: Float,
+    ) {
+    }
 }
 
 pub trait LayerDims {
@@ -423,15 +433,15 @@ impl<const IN: usize, const OUT: usize> Layer<IN, OUT> for DenseLayer<IN, OUT> {
         self.bias_grads.fill(0.0);
     }
 
-    fn apply_gradients(
-        &mut self,
-        optimizer: &mut dyn Optimizer,
-        slot: &mut usize,
-        scale: Float,
-    ) {
+    fn apply_gradients(&mut self, optimizer: &mut dyn Optimizer, slot: &mut usize, scale: Float) {
         optimizer.update_parameter(*slot, &mut self.weights, &self.weight_grads, scale);
         *slot += 1;
-        optimizer.update_parameter(*slot, self.biases.as_mut_slice(), self.bias_grads.as_slice(), scale);
+        optimizer.update_parameter(
+            *slot,
+            self.biases.as_mut_slice(),
+            self.bias_grads.as_slice(),
+            scale,
+        );
         *slot += 1;
         self.zero_grad();
     }
@@ -645,7 +655,12 @@ mod private {
             workspace: &mut Self::Workspace,
         );
         fn zero_grad(&mut self);
-        fn apply_gradients(&mut self, optimizer: &mut dyn Optimizer, slot: &mut usize, scale: Float);
+        fn apply_gradients(
+            &mut self,
+            optimizer: &mut dyn Optimizer,
+            slot: &mut usize,
+            scale: Float,
+        );
     }
 
     impl<Head, const INPUT: usize, const OUTPUT: usize> ModuleChain<INPUT, OUTPUT>
@@ -788,7 +803,8 @@ mod private {
                 body: self.layers.workspace(),
                 input_grad: Box::new([0.0; INPUT]),
             };
-            self.layers.forward_with_workspace(input, &mut workspace.body);
+            self.layers
+                .forward_with_workspace(input, &mut workspace.body);
             let mut result = [0.0; OUTPUT];
             result.copy_from_slice(Layers::output(&workspace.body));
             result
@@ -828,8 +844,11 @@ mod private {
                         self.layers
                             .forward_with_workspace(&sample.input, &mut workspace.body);
                         let mut grad = [0.0; OUTPUT];
-                        let loss =
-                            loss_fn.loss_and_grad(Layers::output(&workspace.body), &sample.target, &mut grad);
+                        let loss = loss_fn.loss_and_grad(
+                            Layers::output(&workspace.body),
+                            &sample.target,
+                            &mut grad,
+                        );
                         Layers::set_output_grad(&mut workspace.body, &grad);
                         self.layers.backward_with_workspace(
                             &sample.input,
@@ -1031,13 +1050,8 @@ impl<Layers, const INPUT: usize, const CURRENT: usize> VectorBuilder<Layers, INP
     }
 }
 
-pub struct ImageBuilder<
-    Layers,
-    const INPUT: usize,
-    const C: usize,
-    const H: usize,
-    const W: usize,
-> {
+pub struct ImageBuilder<Layers, const INPUT: usize, const C: usize, const H: usize, const W: usize>
+{
     layers: Layers,
 }
 
@@ -1061,7 +1075,9 @@ impl<Layers, const INPUT: usize, const C: usize, const H: usize, const W: usize>
 where
     [(); INPUT]:,
 {
-    pub fn relu(self) -> ImageBuilder<
+    pub fn relu(
+        self,
+    ) -> ImageBuilder<
         <Layers as private::AppendLayer<ReLU<{ C * H * W }>, { C * H * W }>>::Output,
         INPUT,
         C,
@@ -1077,7 +1093,9 @@ where
         }
     }
 
-    pub fn sigmoid(self) -> ImageBuilder<
+    pub fn sigmoid(
+        self,
+    ) -> ImageBuilder<
         <Layers as private::AppendLayer<Sigmoid<{ C * H * W }>, { C * H * W }>>::Output,
         INPUT,
         C,
@@ -1093,13 +1111,7 @@ where
         }
     }
 
-    pub fn conv<
-        const OC: usize,
-        const FH: usize,
-        const FW: usize,
-        const S: usize,
-        const P: usize,
-    >(
+    pub fn conv<const OC: usize, const FH: usize, const FW: usize, const S: usize, const P: usize>(
         self,
     ) -> ImageBuilder<
         <Layers as private::AppendLayer<
@@ -1116,9 +1128,9 @@ where
         [(); OC * conv_out_dim(H, P, FH, S) * conv_out_dim(W, P, FW, S)]:,
         (): ConvGeometryIsValid<H, W, FH, FW, S, P>,
         Layers: private::AppendLayer<
-            Conv<W, H, C, FH, FW, OC, S, P>,
-            { OC * conv_out_dim(H, P, FH, S) * conv_out_dim(W, P, FW, S) },
-        >,
+                Conv<W, H, C, FH, FW, OC, S, P>,
+                { OC * conv_out_dim(H, P, FH, S) * conv_out_dim(W, P, FW, S) },
+            >,
     {
         ImageBuilder {
             layers: self.layers.then(Conv::<W, H, C, FH, FW, OC, S, P>::init()),
@@ -1129,7 +1141,9 @@ where
     where
         [(); C * H * W]:,
     {
-        VectorBuilder { layers: self.layers }
+        VectorBuilder {
+            layers: self.layers,
+        }
     }
 
     pub fn build(self) -> Sequential<INPUT, { C * H * W }>

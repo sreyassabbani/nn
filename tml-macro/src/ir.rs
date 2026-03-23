@@ -58,18 +58,11 @@ impl NetworkIr {
                         ));
                     }
                 },
-                LayerSpecKind::ReLU => {
-                    (current_shape, quote! { .relu() })
-                }
-                LayerSpecKind::Sigmoid => {
-                    (current_shape, quote! { .sigmoid() })
-                }
+                LayerSpecKind::ReLU => (current_shape, quote! { .relu() }),
+                LayerSpecKind::Sigmoid => (current_shape, quote! { .sigmoid() }),
                 LayerSpecKind::Flatten => {
                     let size = current_shape.size_expr();
-                    (
-                        ShapeSpec::Vec { n: size.clone() },
-                        quote! { .flatten() },
-                    )
+                    (ShapeSpec::Vec { n: size.clone() }, quote! { .flatten() })
                 }
                 LayerSpecKind::Conv(conv) => {
                     match &current_shape {
