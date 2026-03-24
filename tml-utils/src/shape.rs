@@ -18,6 +18,7 @@ pub trait TensorShape: sealed::Sealed {
     const RANK: usize;
 
     fn offset(index: &[usize]) -> usize;
+    fn dims() -> Vec<usize>;
 }
 
 pub trait NonScalarShape: TensorShape {
@@ -33,6 +34,10 @@ impl TensorShape for Nil {
         assert!(index.is_empty(), "expected scalar index");
         0
     }
+
+    fn dims() -> Vec<usize> {
+        Vec::new()
+    }
 }
 
 impl<const N: usize, Rest> TensorShape for Dim<N, Rest>
@@ -47,6 +52,12 @@ where
         let head = index[0];
         assert!(head < N, "index out of bounds");
         head * Rest::SIZE + Rest::offset(&index[1..])
+    }
+
+    fn dims() -> Vec<usize> {
+        let mut dims = vec![N];
+        dims.extend(Rest::dims());
+        dims
     }
 }
 
@@ -64,8 +75,16 @@ macro_rules! shape {
         $crate::shape::Nil
     };
 
+    ($name:ident : $dim:expr $(,)?) => {
+        $crate::shape::Dim<{ $dim }, $crate::shape::Nil>
+    };
+
     ($dim:expr $(,)?) => {
         $crate::shape::Dim<{ $dim }, $crate::shape::Nil>
+    };
+
+    ($name:ident : $first:expr, $($rest:tt)+) => {
+        $crate::shape::Dim<{ $first }, $crate::shape!($($rest)+)>
     };
 
     ($first:expr, $($rest:expr),+ $(,)?) => {

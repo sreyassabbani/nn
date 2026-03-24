@@ -242,7 +242,7 @@ impl TrainConfig {
         self
     }
 
-    fn optimizer_mut(&mut self) -> &mut dyn Optimizer {
+    pub(crate) fn optimizer_mut(&mut self) -> &mut dyn Optimizer {
         self.optimizer.as_mut()
     }
 }
@@ -327,6 +327,7 @@ pub struct DenseLayer<const IN: usize, const OUT: usize> {
     biases: Box<[Float; OUT]>,
     weight_grads: Box<[Float]>,
     bias_grads: Box<[Float; OUT]>,
+    use_bias: bool,
 }
 
 #[derive(Debug)]
@@ -368,13 +369,20 @@ impl<const IN: usize, const OUT: usize> DenseLayer<IN, OUT> {
             biases: Box::new([0.0; OUT]),
             weight_grads: vec![0.0; IN * OUT].into_boxed_slice(),
             bias_grads: Box::new([0.0; OUT]),
+            use_bias: true,
         }
+    }
+
+    pub fn without_bias(mut self) -> Self {
+        self.use_bias = false;
+        self.biases.fill(0.0);
+        self
     }
 
     pub fn forward(&self, input: &[Float; IN], output: &mut [Float; OUT]) {
         for (o, out) in output.iter_mut().enumerate() {
             let row = &self.weights[o * IN..(o + 1) * IN];
-            let mut sum = self.biases[o];
+            let mut sum = if self.use_bias { self.biases[o] } else { 0.0 };
             for (weight, inp) in row.iter().zip(input.iter()) {
                 sum += *weight * *inp;
             }
@@ -399,7 +407,9 @@ impl<const IN: usize, const OUT: usize> DenseLayer<IN, OUT> {
         }
 
         for (o, &grad) in output_grad.iter().enumerate() {
-            self.bias_grads[o] += grad;
+            if self.use_bias {
+                self.bias_grads[o] += grad;
+            }
             let row_grads = &mut self.weight_grads[o * IN..(o + 1) * IN];
             for (weight_grad, inp) in row_grads.iter_mut().zip(input.iter()) {
                 *weight_grad += grad * *inp;
@@ -436,13 +446,15 @@ impl<const IN: usize, const OUT: usize> Layer<IN, OUT> for DenseLayer<IN, OUT> {
     fn apply_gradients(&mut self, optimizer: &mut dyn Optimizer, slot: &mut usize, scale: Float) {
         optimizer.update_parameter(*slot, &mut self.weights, &self.weight_grads, scale);
         *slot += 1;
-        optimizer.update_parameter(
-            *slot,
-            self.biases.as_mut_slice(),
-            self.bias_grads.as_slice(),
-            scale,
-        );
-        *slot += 1;
+        if self.use_bias {
+            optimizer.update_parameter(
+                *slot,
+                self.biases.as_mut_slice(),
+                self.bias_grads.as_slice(),
+                scale,
+            );
+            *slot += 1;
+        }
         self.zero_grad();
     }
 }

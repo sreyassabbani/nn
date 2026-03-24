@@ -43,12 +43,18 @@ where
 }
 
 pub mod shape;
+mod blueprint;
 mod tensor;
 
 pub mod conv;
 pub mod data;
 
 pub use autodiff::{EvalTape, ExprGraph, Gradients, NodeId, Op, ReverseTape, Tape, TapeError, Var};
+pub use blueprint::{
+    Axis, Blueprint, GraphRuntime, HeadsSpec, InitConfig, MaterializeContext, Model,
+    PredictRuntime, TrainRuntime, concat, conv, dense, dense_no_bias, features_input, flatten,
+    image_input, relu, residual, root, share, sigmoid, sum, volume_input,
+};
 pub use data::Sample;
 pub use network::{
     Adam, DenseLayer, Flatten, Initializer, KaimingUniform, Layer, LayerDims, LossFunction,
