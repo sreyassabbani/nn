@@ -1,4 +1,4 @@
-use crate::parsing::{
+use crate::ast::{
     ConvSpec, DenseSpec, HeadAst, InputSpec, KernelSpec, NetworkAst, PipelineAst, StepAst,
 };
 use proc_macro2::{Span, TokenStream as TokenStream2};
