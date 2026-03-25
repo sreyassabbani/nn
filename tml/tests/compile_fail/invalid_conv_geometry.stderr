@@ -1,56 +1,21 @@
-error[E0308]: mismatched types
- --> tests/compile_fail/invalid_conv_geometry.rs:7:13
+error[E0080]: evaluation panicked: conv kernel does not fit input height
+ --> $WORKSPACE/tml-utils/src/lib.rs
   |
-7 |       let _ = network! {
-  |  _____________^
-8 | |         input(1, 4, 4) -> conv(2, 5, 1, 0) -> output
-9 | |     };
-  | |_____^ expected `false`, found `true`
+  |     [(); conv_kernel_fits_input_checked(H, W, FH, FW, S, P)]:,
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `<() as tml::ConvKernelFitsInput<4, 4, 5, 5, 1, 0>>::{constant#0}` failed inside this call
   |
-  = note: expected constant `false`
-             found constant `true`
-  = note: this error originates in the macro `network` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `network::private::Chain<Conv<4, 4, 1, 5, 5, 2, 1, 0>, network::private::End, tml_utils::::network::{impl#30}::conv::{constant#3}>: network::private::ModuleChain<tml_utils::::network::{impl#26}::image_input::{constant#1}, tml_utils::::network::{impl#30}::build::{constant#1}>` is not satisfied
- --> tests/compile_fail/invalid_conv_geometry.rs:7:13
+note: inside `conv_kernel_fits_input_checked`
+ --> $WORKSPACE/tml-utils/src/lib.rs
   |
-7 |       let _ = network! {
-  |  _____________^
-8 | |         input(1, 4, 4) -> conv(2, 5, 1, 0) -> output
-9 | |     };
-  | |_____^ unsatisfied trait bound
+  |     assert_conv_kernel_fits_input(h, w, fh, fw, stride, pad);
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: inside `assert_conv_kernel_fits_input`
+ --> $RUST/core/src/panic.rs
   |
-  = help: the trait `network::private::ModuleChain<tml_utils::::network::{impl#26}::image_input::{constant#1}, tml_utils::::network::{impl#30}::build::{constant#1}>` is not implemented for `network::private::Chain<Conv<4, 4, 1, 5, 5, 2, 1, 0>, network::private::End, tml_utils::::network::{impl#30}::conv::{constant#3}>`
-help: the following other types implement trait `network::private::ModuleChain<INPUT, OUTPUT>`
- --> $WORKSPACE/tml-utils/src/network.rs
+  |         $crate::panicking::panic_fmt($crate::const_format_args!($($t)+));
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the failure occurred here
   |
-  | /     impl<Head, const INPUT: usize, const OUTPUT: usize> ModuleChain<INPUT, OUTPUT>
-  | |         for Chain<Head, End, OUTPUT>
-  | |     where
-  | |         Head: Layer<INPUT, OUTPUT>,
-  | |___________________________________^ `network::private::Chain<Head, network::private::End, OUTPUT>`
-...
-  | /     impl<Head, Tail, const INPUT: usize, const MID: usize, const OUTPUT: usize>
-  | |         ModuleChain<INPUT, OUTPUT> for Chain<Head, Tail, MID>
-  | |     where
-  | |         Head: Layer<INPUT, MID>,
-  | |         Tail: ModuleChain<MID, OUTPUT>,
-  | |_______________________________________^ `network::private::Chain<Head, Tail, MID>`
-note: required by a bound in `ImageBuilder::<Layers, INPUT, C, H, W>::build`
- --> $WORKSPACE/tml-utils/src/network.rs
+ ::: $WORKSPACE/tml-utils/src/lib.rs
   |
-  |     pub fn build(self) -> Sequential<INPUT, { C * H * W }>
-  |            ----- required by a bound in this associated function
-...
-  |         Layers: private::ModuleChain<INPUT, { C * H * W }> + fmt::Debug + 'static,
-  |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `ImageBuilder::<Layers, INPUT, C, H, W>::build`
-  = note: this error originates in the macro `network` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0080]: evaluation panicked: conv: invalid height (check input H, kernel, stride, padding)
- --> tests/compile_fail/invalid_conv_geometry.rs:7:13
-  |
-7 |       let _ = network! {
-  |  _____________^
-8 | |         input(1, 4, 4) -> conv(2, 5, 1, 0) -> output
-9 | |     };
-  | |_____^ evaluation of `main::_` failed here
+  |         panic!("conv kernel does not fit input height");
+  |         ----------------------------------------------- in this macro invocation

@@ -1,5 +1,29 @@
-error: dense expects a vector input; add flatten before dense
- --> tests/compile_fail/dense_on_image_without_flatten.rs:8:27
+error[E0277]: the trait bound `Dim<1, Dim<4, Dim<4, Nil>>>: tml_utils::blueprint::DenseExpectsFlatInput<2, true>` is not satisfied
+ --> tests/compile_fail/dense_on_image_without_flatten.rs:7:13
   |
-8 |         input(1, 4, 4) -> dense(2) -> output
-  |                           ^^^^^
+7 |       let _ = network! {
+  |  _____________^
+8 | |         input(channels: 1, height: 4, width: 4) -> dense(2)
+9 | |     };
+  | |_____^ the trait `tml_utils::blueprint::DenseExpectsFlatInput<2, true>` is not implemented for `Dim<1, Dim<4, Dim<4, Nil>>>`
+  |
+help: the trait `tml_utils::blueprint::DenseExpectsFlatInput<2, true>` is not implemented for `Dim<1, Dim<4, Dim<4, Nil>>>`
+      but it is implemented for `Dim<1, Nil>`
+ --> $WORKSPACE/tml-utils/src/blueprint.rs
+  |
+  | / impl<const N: usize, const OUT: usize, const BIAS: bool> DenseExpectsFlatInput<OUT, BIAS>
+  | |     for shape!(N)
+  | | where
+  | |     [(); N]:,
+  | |_____________^
+  = help: for that trait implementation, expected `Nil`, found `Dim<4, Dim<4, Nil>>`
+  = note: required for `tml_utils::blueprint::DenseSpec<2>` to implement `TransformSpec<Dim<1, Dim<4, Dim<4, Nil>>>>`
+note: required by a bound in `validate_blueprint`
+ --> $WORKSPACE/tml-utils/src/blueprint.rs
+  |
+  | pub fn validate_blueprint<InputShape, Spec>(
+  |        ------------------ required by a bound in this function
+...
+  |     Spec: TransformSpec<InputShape>,
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `validate_blueprint`
+  = note: this error originates in the macro `network` (in Nightly builds, run with -Z macro-backtrace for more info)

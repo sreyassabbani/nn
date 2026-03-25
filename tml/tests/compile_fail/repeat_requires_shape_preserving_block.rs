@@ -5,6 +5,6 @@ use tml::network;
 
 fn main() {
     let _ = network! {
-        input(channels: 1, height: 4, width: 4) -> dense(2)
+        input(features: 2) -> repeat(2, dense(3))
     };
 }

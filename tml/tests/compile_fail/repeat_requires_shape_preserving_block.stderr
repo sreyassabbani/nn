@@ -1,0 +1,5 @@
+error: inline transform calls belong directly in network!; assign chunks with let or use the transform syntax directly
+ --> tests/compile_fail/repeat_requires_shape_preserving_block.rs:8:41
+  |
+8 |         input(features: 2) -> repeat(2, dense(3))
+  |                                         ^^^^^^^^

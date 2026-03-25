@@ -19,6 +19,9 @@ This will limit the performance of the library, but this is a learning experienc
 
 For more on the development philosophy, goals, and design decisions for this library, see [DESIGN](DESIGN.md).
 
+> [!TODO]
+> Future branding: banner/slogan around _`tml` — architecture as a typed language_
+
 ### Development
 
 1. Clone the repo.
@@ -39,13 +42,15 @@ Nightly-only (until `generic_const_exprs` stabilizes). In your crate root:
 
 ### Network DSL
 
-`network!` is syntax sugar for building a typed `Sequential` model. The public builder API is the core runtime surface, and `TrainConfig` owns the optimizer:
+`network!` is now the architecture language. It returns a typed blueprint, and you materialize trainable model state explicitly with `InitConfig`:
 ```rs
-use tml::{TrainConfig, network};
+use tml::{InitConfig, TrainConfig, network};
 
-let mut net = network! {
-    input(1) -> dense(8) -> relu -> dense(1) -> output
+let arch = network! {
+    input(features: 1) -> dense(8) -> relu -> dense(1)
 };
+
+let mut net = arch.materialize(InitConfig::new().seed(7));
 
 let samples = [
     ([0.0], [1.0]),
@@ -65,16 +70,22 @@ let prediction = net.predict(&[0.5]);
 
 For image inputs, keep `flatten` explicit before dense layers:
 ```rs
-use tml::network;
+use tml::{InitConfig, network};
 
-let net = network! {
-    input(3, 32, 32) -> conv(8, 3, 1, 1) -> relu -> flatten -> dense(10) -> output
+let arch = network! {
+    input(channels: 3, height: 32, width: 32)
+        -> conv(8, kernel: 3, pad: 1)
+        -> relu
+        -> flatten
+        -> dense(10)
 };
 
+let net = arch.materialize(InitConfig::new());
 let logits = net.predict(&[0.0; 3 * 32 * 32]);
 ```
 
-You can also build the same runtime manually, without the DSL:
+The older builder API still exists as a compatibility shim, but `network!` is now the primary public entrypoint.
+You can still build equivalent runtimes manually if needed:
 ```rs
 use tml::ModelBuilder;
 

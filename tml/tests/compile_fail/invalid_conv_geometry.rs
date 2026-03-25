@@ -5,6 +5,6 @@ use tml::network;
 
 fn main() {
     let _ = network! {
-        input(1, 4, 4) -> conv(2, 5, 1, 0) -> output
+        input(channels: 1, height: 4, width: 4) -> conv(2, kernel: 5)
     };
 }

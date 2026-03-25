@@ -16,11 +16,13 @@ This crate currently depends on `generic_const_exprs`, so downstream crates gene
 ## Quickstart
 
 ```rs
-use tml::{TrainConfig, network};
+use tml::{InitConfig, TrainConfig, network};
 
-let mut net = network! {
-    input(1) -> dense(8) -> relu -> dense(1) -> output
+let arch = network! {
+    input(features: 1) -> dense(8) -> relu -> dense(1)
 };
+
+let mut net = arch.materialize(InitConfig::new().seed(7));
 
 let samples = [
     ([0.0], [1.0]),

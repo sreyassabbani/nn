@@ -1,4 +1,4 @@
-use tml::{Float, Sample, TrainConfig, network};
+use tml::{Float, InitConfig, Sample, TrainConfig, network};
 
 // y = 0.5x^2 - x + 0.2
 fn magic(x: Float) -> Float {
@@ -6,9 +6,10 @@ fn magic(x: Float) -> Float {
 }
 
 fn main() {
-    let mut model = network! {
-        input(1) -> dense(16) -> relu -> dense(1) -> output
+    let arch = network! {
+        input(features: 1) -> dense(16) -> relu -> dense(1)
     };
+    let mut model = arch.materialize(InitConfig::new().seed(11));
 
     let samples = (-40..=40)
         .map(|i| {
