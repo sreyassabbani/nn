@@ -232,6 +232,7 @@ This is the cleaner abstraction split:
 The prototype currently supports:
 - named fragment values
 - direct fragment factory calls
+- named Rust fragment types implementing `Fragment`
 - sharing named fragment values with `share(name)`
 
 The prototype currently does **not** cleanly support:
@@ -239,6 +240,7 @@ The prototype currently does **not** cleanly support:
 
 So the current practical idiom is:
 - return concrete `Blueprint<Spec>` values from reusable fragment factories
+- or define named Rust fragment types that implement `Fragment`
 - or bind fragment values before inserting them into `network!`
 
 This is an important real constraint from Rust's type system, not just a style preference.

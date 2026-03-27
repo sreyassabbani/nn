@@ -131,6 +131,17 @@ fn user_defined_stem() -> tml::Blueprint<vision::common::StemSpec<2, 2>> {
     vision::common::stem::<2, 2>()
 }
 
+#[derive(Clone)]
+struct NamedStem;
+
+impl tml::Fragment for NamedStem {
+    type Spec = vision::common::StemSpec<2, 2>;
+
+    fn into_blueprint(self) -> tml::Blueprint<Self::Spec> {
+        vision::common::stem::<2, 2>()
+    }
+}
+
 #[test]
 fn rust_defined_fragment_values_compose_inside_network_macro() {
     let tower = vision::common::stem::<2, 2>().then_fragment(vision::common::residual_block::<2>());
@@ -170,6 +181,18 @@ fn user_defined_fragment_values_can_be_bound_without_the_macro() {
     };
 
     let model = arch.materialize(InitConfig::new().seed(23));
+    let out = model.predict(&[1.0; 128]);
+    assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn named_fragment_types_can_be_bound_and_composed_inside_network_macro() {
+    let stem = NamedStem;
+    let arch = network! {
+        input(channels: 2, height: 8, width: 8) -> stem -> flatten -> dense(2)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(29));
     let out = model.predict(&[1.0; 128]);
     assert_eq!(out.len(), 2);
 }
