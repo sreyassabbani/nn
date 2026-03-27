@@ -310,6 +310,25 @@ Current judgment:
 - this is stronger than raw `params(c, y, x)`
 - it should become the leading reusable-chunk interface model
 
+But it is still not obviously strong enough.
+
+The name `spatial` in examples above is **not** special.
+It is just a user-chosen interface-slot name.
+
+That means this:
+
+```rust
+params(spatial: [y, x])
+```
+
+currently guarantees only:
+- that the slot is named `spatial`
+- that it binds exactly two axes
+
+It does **not** guarantee any deeper meaning.
+
+That is a real weakness and needs adversarial pressure.
+
 ## Chunk Signatures and Parameter Safety
 
 The parameter list in a reusable chunk is not just documentation.
@@ -377,6 +396,166 @@ let arch = network! {
 because `spatial` was declared as a two-axis slot and only one axis was supplied.
 
 This is the point where `params(...)` becomes real type-safety rather than macro decoration.
+
+## Adversarial Stress Tests For Chunk Interfaces
+
+The right way to judge chunk-parameter syntax is to try to break it.
+
+### 1. Name theater
+
+This is legal-looking:
+
+```rust
+let block = network! {
+    params(spatial: [tok, feat])
+    -> linear(on: feat, out: 768)
+};
+```
+
+The slot name `spatial` means nothing here.
+
+This is not a bug by itself, but it proves an important point:
+
+- slot names must not be mistaken for built-in semantics
+- the DSL should not imply that names like `spatial` or `channel` carry magical meaning
+
+### 2. Arity spoofing
+
+This also looks fine:
+
+```rust
+let stem = network! {
+    params(ch: c, plane: [y, x])
+    defaults {
+        conv(on: c, over: [y, x]);
+    }
+    -> conv(32, kernel: 3, pad: 1)
+};
+
+let spectrogram = network! {
+    input(sensor: 16, time: 1024, freq: 80)
+    -> stem(ch: sensor, plane: [time, freq])
+};
+```
+
+This might actually be perfectly valid.
+The point is:
+
+- `[y, x]` only constrains arity and order
+- it does not encode any stronger structural contract
+
+That means interface-slot lists are more general than the earlier ontology-based model,
+but also weaker than they may first appear.
+
+### 3. Overlap and aliasing
+
+This should almost certainly be rejected:
+
+```rust
+let arch = network! {
+    input(c: 64, y: 56, x: 56)
+    -> stem(ch: c, plane: [c, x])
+};
+```
+
+because the same actual axis `c` is being bound into two distinct interface roles.
+
+More pathological:
+
+```rust
+let block = network! {
+    params(seq: [tok], feat: f)
+    -> attend(on: f, over: [tok], heads: 12)
+};
+
+let arch = network! {
+    input(tok: 512)
+    -> block(seq: [tok], feat: tok)
+};
+```
+
+This collapses two intended roles onto the same axis.
+
+Current judgment:
+- distinct interface slots should bind to distinct actual axes by default
+- if aliasing is ever allowed, it should be explicit, not accidental
+
+### 4. Order fragility
+
+This is subtle:
+
+```rust
+-> stem(ch: c, plane: [y, x])
+-> stem(ch: c, plane: [x, y])
+```
+
+Both satisfy the same arity.
+But many transforms interpret axis-list order as semantically significant for:
+- kernel shape
+- stride shape
+- dilation shape
+- later partial selection
+
+So list-based slots are still more fragile than they look.
+
+### 5. Namespace collision pressure
+
+The language is already accumulating multiple naming spaces:
+- axis labels
+- chunk interface slot names
+- saved activation names
+- head names
+- helper config keys
+
+If those are not kept distinct, the DSL will rot quickly.
+
+Current judgment:
+- chunk slot names, axis labels, and saved-source names should live in separate namespaces
+
+## Stronger Candidate: Structured Slot Parameters
+
+The adversarial cases above suggest that raw axis-list slots may still be too weak.
+
+A stronger direction is to let chunk interfaces declare **structured slots**.
+
+Example:
+
+```rust
+let stem = network! {
+    params(ch, plane { row, col })
+    defaults {
+        conv(on: ch, over: plane);
+        pool(over: plane);
+    }
+    -> conv(32, kernel: 3, pad: 1)
+    -> relu
+};
+
+let arch = network! {
+    input(rgb: 3, row: 32, col: 32)
+    -> stem(ch: rgb, plane: { row: row, col: col })
+    -> flatten(into: f)
+    -> dense(10)
+};
+```
+
+This is stronger because:
+- `plane` is a first-class interface slot, not just a nickname for `[y, x]`
+- member names like `row` and `col` make order explicit
+- application can check exact member coverage, not just list length
+- transforms can consume the whole structured slot:
+  - `over: plane`
+- or eventually refer to members:
+  - `plane.row`
+  - `plane.col`
+
+This also keeps semantics open-ended:
+- `plane` is not a magical ontology word
+- users could name the slot `domain`, `grid`, `window`, `spectrogram`, etc.
+
+Current judgment:
+- structured slots are now a stronger candidate than plain axis-list slots
+- the current `params(ch: c, spatial: [y, x])` form should be treated as a stepping stone, not a settled answer
 
 ## Candidate DSL: Blueprint Application With Defaults
 
@@ -1374,31 +1553,31 @@ This keeps transform meaning local and avoids hidden ontology.
 
 This should become the idiomatic way to remove repetition.
 
-### 5. Prefer interface-oriented `params(...)` for reusable chunks
+### 5. Prefer explicit structured interfaces for reusable chunks
 
 Prefer:
 
 ```rust
 let stem = network! {
-    params(ch: c, spatial: [y, x])
+    params(ch, plane { row, col })
     ...
 };
 ```
 
-Avoid using closure-like pipe syntax or raw unnamed parameter lists as the leading documented pattern.
+Avoid using closure-like pipe syntax, raw unnamed parameter lists, or ontology-heavy slot names as the leading documented pattern.
 
 ### 6. Prefer interface-slot application
 
 Prefer:
 
 ```rust
--> stem(ch: channels, spatial: [row, col])
+-> stem(ch: channels, plane: { row: row, col: col })
 ```
 
 Allow:
 
 ```rust
--> stem(ch: c, spatial: [y, x])
+-> stem(ch: c, plane: { row: y, col: x })
 ```
 
 as the normal explicit form. Raw positional shorthand should only exist, if at all, as undocumented sugar.
@@ -1413,6 +1592,14 @@ Preferred conventions in examples and docs:
 - `f` or `feat` for flattened feature output
 
 These are not mandatory globally, but they should likely be the house style in docs and built-ins.
+
+Preferred structured-slot names in docs should stay neutral and structural:
+- `plane`
+- `grid`
+- `domain`
+- `seq`
+
+Avoid treating ontology-heavy names like `spatial` as though they were built-in concepts.
 
 ### 8. Put reusable built-in helpers under domain namespaces
 
@@ -1431,13 +1618,13 @@ Avoid:
 Prefer forms like:
 
 ```rust
--> vision::common::stem(ch: c, spatial: [y, x], widths: [32, 64])
+-> vision::common::stem(ch: c, plane: { row: y, col: x }, widths: [32, 64])
 ```
 
 or:
 
 ```rust
--> vision::common::stem(ch: channels, spatial: [row, col], widths: [32, 64])
+-> vision::common::stem(ch: channels, plane: { row: row, col: col }, widths: [32, 64])
 ```
 
 The helper story should not feel like a separate subsystem.
@@ -1497,11 +1684,13 @@ The following still need prototyping before implementation decisions are locked:
 3. Whether `defaults { ... }` should be block-scoped or whole-pipeline scoped.
 4. Whether built-in helper invocations inside `network!` are worth the parser complexity.
 5. Whether `linear(on: axis, out: N)` should become the general primitive, with `dense(N)` demoted to sugar.
-6. Whether labels should preserve identity across `conv` and `linear`, or whether explicit renaming becomes necessary sooner.
-7. What the first activation-reference syntax should be for long-skip DAGs.
-8. Whether inputs and saved activations should be unified as named sources under one reference model.
-9. What the first multi-input syntax should be.
-10. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
+6. Whether structured slot parameters should replace plain axis-list slots as the primary chunk interface model.
+7. Whether chunk application should reject overlapping actual-axis bindings by default.
+8. Whether labels should preserve identity across `conv` and `linear`, or whether explicit renaming becomes necessary sooner.
+9. What the first activation-reference syntax should be for long-skip DAGs.
+10. Whether inputs and saved activations should be unified as named sources under one reference model.
+11. What the first multi-input syntax should be.
+12. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
 
 ## Current Lean
 
@@ -1512,9 +1701,10 @@ The strongest current design stance is:
 - scoped defaults remove repetition
 - parameterized reusable chunks are the strongest reuse model
 - free-symbol chunks are acceptable only as a possible shorthand, not as the leading idiom
-- interface-oriented `params(...)` is the strongest chunk declaration form
+- structured chunk interfaces may be stronger than plain axis-list slot binding
 - `params(...)` should be treated as a real interface/signature, not decoration
 - named chunk application is the strongest primary application form
+- overlapping actual-axis bindings should probably be rejected by default
 - the DSL likely needs a general `linear(on: ..., out: ...)` primitive
 - inline combinator blocks are likely cleaner than nested `network!` for local structure
 - long-skip activation references are likely unavoidable for serious DAG architectures
