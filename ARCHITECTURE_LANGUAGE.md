@@ -570,6 +570,230 @@ Rules for v1:
 - `block` must preserve the labeled shape
 - repetition uses fresh parameters unless wrapped in explicit sharing
 
+## Pressure From Other Fields
+
+The current DSL is much stronger than the earlier `conv2d`-style direction, but it is still
+too CNN-biased if it stops here.
+
+If `tml` is going to matter across fields, the language must survive pressure from:
+- transformers and sequence models
+- U-Nets and long-skip encoder-decoder models
+- multimodal fusion
+- scientific/operator models
+- graph/set architectures
+- architectures with multiple named inputs and outputs
+
+The main lesson is:
+
+> `network!` should not be designed as "a nicer CNN builder".
+
+It should be designed as a language of labeled transforms that happens to express CNNs cleanly.
+
+### 1. `dense` is too narrow as a general primitive
+
+Current `dense(10)` works well after `flatten`, but it is too tied to the "single flat feature axis"
+mental model.
+
+Sequence and transformer-style models need a more general projection primitive:
+
+```rust
+linear(on: f, out: 3072)
+```
+
+meaning:
+- preserve every label except `f`
+- replace the extent of `f` with `3072`
+
+Example:
+
+```rust
+let mlp = network! {
+    params(tok, f)
+    -> linear(on: f, out: 3072)
+    -> gelu
+    -> linear(on: f, out: 768)
+};
+```
+
+This suggests a stronger public story:
+
+- `linear(on: axis, out: N)` is the general primitive
+- `dense(N)` becomes sugar for the common flat/single-feature-axis case
+
+This is likely the right move if the library wants to feel general rather than conv-centric.
+
+### 2. `on:` / `over:` should generalize beyond convolution
+
+The strongest part of the current DSL is the `on:` / `over:` split.
+
+That vocabulary should likely become the general language of transforms:
+
+- `conv(out, on: c, over: [y, x], ...)`
+- `pool(max, over: [y, x], ...)`
+- `attend(on: f, over: [tok], heads: 12)`
+- `scan(on: f, over: [tok], state: 16)`
+- `reduce(mean, over: [tok])`
+
+This is much better than teaching separate mental models for every domain.
+
+### 3. Attention pressure
+
+If the DSL cannot express transformer-like blocks naturally, it is not yet general enough.
+
+Candidate direction:
+
+```rust
+let block = network! {
+    params(tok, f)
+    -> residual(
+        network! {
+            norm(rms, over: [f])
+            -> attend(on: f, over: [tok], heads: 12)
+        }
+    )
+    -> residual(
+        network! {
+            norm(rms, over: [f])
+            -> linear(on: f, out: 3072)
+            -> gelu
+            -> linear(on: f, out: 768)
+        }
+    )
+};
+```
+
+This is important because it pressure-tests:
+- per-axis projection
+- per-axis normalization
+- residual blocks beyond CNNs
+
+### 4. Structural transforms need to become first-class
+
+CNNs are not the only architectures that reshape local structure.
+
+The DSL likely needs structural transforms such as:
+
+- `patchify(over: [y, x], into: tok, patch: 16)`
+- `unpatchify(from: tok, over: [y, x], patch: 16)`
+- `upsample(over: [y, x], scale: 2)`
+- `downsample(over: [y, x], factor: 2)`
+- `permute([tok, f])`
+
+Example ViT-like sketch:
+
+```rust
+let arch = network! {
+    input(c: 3, y: 224, x: 224)
+    -> patchify(over: [y, x], into: tok, patch: 16)
+    -> linear(on: c, out: 768)
+    -> repeat(12, network! {
+        params(tok, f)
+        -> residual(network! {
+            norm(rms, over: [f])
+            -> attend(on: f, over: [tok], heads: 12)
+        })
+        -> residual(network! {
+            norm(rms, over: [f])
+            -> linear(on: f, out: 3072)
+            -> gelu
+            -> linear(on: f, out: 768)
+        })
+    }(tok: tok, f: c))
+    -> reduce(mean, over: [tok])
+    -> dense(1000)
+};
+```
+
+Even if this exact syntax changes, the capability pressure is real.
+
+### 5. Long-skip architectures need activation references
+
+The current language can express local branches and residuals, but that is not enough for U-Net,
+FPN, or other architectures with long-lived skip activations.
+
+That means the DSL likely needs an explicit activation-reference mechanism.
+
+Candidate direction:
+
+```rust
+network! {
+    input(c: 3, y: 256, x: 256)
+    -> save(enc1)
+    -> downsample(over: [y, x], factor: 2)
+    -> save(enc2)
+    -> downsample(over: [y, x], factor: 2)
+    -> upsample(over: [y, x], scale: 2)
+    -> concat(c)[current, from(enc2)]
+    -> upsample(over: [y, x], scale: 2)
+    -> concat(c)[current, from(enc1)]
+    -> dense(2)
+}
+```
+
+This is not yet the chosen syntax.
+
+But the design pressure is unavoidable:
+- plain sequential chunk composition is not enough for long-range DAGs
+- the language probably needs named activation references eventually
+
+### 6. Multi-input architectures are a real requirement
+
+Many important architectures need more than one input:
+- encoder-decoder with conditioning
+- multimodal fusion
+- cross attention
+- graph models with node and edge inputs
+
+So the language should probably reserve a future symmetric counterpart to `heads`:
+
+```rust
+network! {
+    inputs {
+        image(c: 3, y: 224, x: 224),
+        text(tok: 77, f: 768),
+    }
+    -> ...
+}
+```
+
+Even if this is not implemented yet, the single-input assumption should not harden into the core.
+
+### 7. Graph and irregular domains should not be forced into fake convolution language
+
+Some domains are not well-modeled by regular windowed axes.
+
+Graph models, set models, and operator-learning models may need domain-specific transforms such as:
+
+- `message_pass(nodes: n, features: f, edges: e, out: 128)`
+- `aggregate(sum, over: [nodes])`
+- `cross_attend(on: f, query: [target], context: [source], heads: 8)`
+
+The lesson is not "make everything graph-specific".
+
+It is:
+- keep the core language generic and label-driven
+- allow field-specific namespaces to define stronger reusable abstractions
+
+### 8. Field namespaces should reflect real architectural families
+
+The namespace idea should broaden accordingly:
+
+- `vision::common::*`
+- `vision::resnet::*`
+- `vision::unet::*`
+- `sequence::common::*`
+- `sequence::transformer::*`
+- `audio::common::*`
+- `graph::common::*`
+- `multimodal::fusion::*`
+
+The goal is:
+- one language
+- many domain libraries built on top of it
+
+not:
+- one monolithic generic core that forces every field into the same primitive vocabulary
+
 ## Example Users and Prototype Matrix
 
 The DSL should be tested against concrete user archetypes before implementation.
@@ -708,6 +932,77 @@ let arch = network! {
     -> pool(avg, over: [y, x])
     -> flatten(into: f)
     -> dense(1000)
+};
+```
+
+### 10. Transformer-style user
+
+```rust
+let block = network! {
+    params(tok, f)
+    -> residual(
+        network! {
+            norm(rms, over: [f])
+            -> attend(on: f, over: [tok], heads: 12)
+        }
+    )
+    -> residual(
+        network! {
+            norm(rms, over: [f])
+            -> linear(on: f, out: 3072)
+            -> gelu
+            -> linear(on: f, out: 768)
+        }
+    )
+};
+
+let arch = network! {
+    input(tok: 512, f: 768)
+    -> block(tok: tok, f: f)
+    -> block(tok: tok, f: f)
+    -> reduce(mean, over: [tok])
+    -> dense(2)
+};
+```
+
+### 11. U-Net-like user
+
+```rust
+let arch = network! {
+    input(c: 3, y: 256, x: 256)
+    -> save(enc1)
+    -> downsample(over: [y, x], factor: 2)
+    -> save(enc2)
+    -> downsample(over: [y, x], factor: 2)
+    -> upsample(over: [y, x], scale: 2)
+    -> concat(c)[current, from(enc2)]
+    -> upsample(over: [y, x], scale: 2)
+    -> concat(c)[current, from(enc1)]
+    -> dense(2)
+};
+```
+
+### 12. Multimodal user
+
+```rust
+let arch = network! {
+    inputs {
+        image(c: 3, y: 224, x: 224),
+        text(tok: 77, f: 768),
+    }
+    -> ...
+};
+```
+
+### 13. Graph-model user
+
+```rust
+let arch = network! {
+    input(node: 1024, feat: 128, edge: 4096)
+    -> graph::common::message_pass(node, feat, edge; out: 256)
+    -> graph::common::message_pass(node, feat, edge; out: 256)
+    -> reduce(mean, over: [node])
+    -> dense(10)
 };
 ```
 
@@ -893,6 +1188,31 @@ The helper story should not feel like a separate subsystem.
 
 The DSL should not teach users that they must think in terms of an approved set of semantic axis roles.
 
+### 11. Prefer general primitives over domain-locked names when they scale
+
+Prefer:
+- `linear(on: f, out: 768)`
+- `attend(on: f, over: [tok], heads: 12)`
+- `reduce(mean, over: [tok])`
+
+over forcing every field into:
+- `dense(...)`
+- `conv2d(...)`
+- `multihead_attention(...)`
+
+when a cleaner labeled-axis primitive would scale better.
+
+### 12. Domain namespaces should package patterns, not replace the language
+
+The language should stay primary.
+
+Domain helpers should be:
+- reusable templates
+- stronger idioms
+- family-specific convenience
+
+not a second architecture subsystem.
+
 ## What Still Needs Proof
 
 The following still need prototyping before implementation decisions are locked:
@@ -901,8 +1221,11 @@ The following still need prototyping before implementation decisions are locked:
 2. Whether named application should be the only documented form, with shorthand intentionally undocumented.
 3. Whether `defaults { ... }` should be block-scoped or whole-pipeline scoped.
 4. Whether built-in helper invocations inside `network!` are worth the parser complexity.
-5. Whether labels should preserve identity across `conv`, or whether explicit renaming becomes necessary sooner.
-6. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
+5. Whether `linear(on: axis, out: N)` should become the general primitive, with `dense(N)` demoted to sugar.
+6. Whether labels should preserve identity across `conv` and `linear`, or whether explicit renaming becomes necessary sooner.
+7. What the first activation-reference syntax should be for long-skip DAGs.
+8. What the first multi-input syntax should be.
+9. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
 
 ## Current Lean
 
@@ -915,6 +1238,9 @@ The strongest current design stance is:
 - free-symbol chunks are acceptable only as a possible shorthand, not as the leading idiom
 - `params(...)` is the strongest chunk declaration form
 - named chunk application is the strongest primary application form
+- the DSL likely needs a general `linear(on: ..., out: ...)` primitive
+- long-skip activation references are likely unavoidable for serious DAG architectures
+- multi-input syntax should be treated as a real requirement, not a niche extension
 - built-in helper namespaces are acceptable, but only inside `network!`
 - built-in helpers should conceptually be predeclared parameterized blueprint templates
 - no public semantic axis taxonomy unless a real implementation pressure makes it unavoidable
