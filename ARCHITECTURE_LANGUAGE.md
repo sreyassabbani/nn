@@ -557,6 +557,241 @@ Current judgment:
 - structured slots are now a stronger candidate than plain axis-list slots
 - the current `params(ch: c, spatial: [y, x])` form should be treated as a stepping stone, not a settled answer
 
+## Dimension Safety Is A Separate Problem
+
+Axis safety and dimension safety are not the same thing.
+
+The current DSL work is getting better at:
+- label existence
+- label binding
+- slot structure
+- branch/source naming
+
+But that is still weaker than true shape safety.
+
+Real type-safety also needs to account for:
+- rank
+- per-axis extents
+- symbolic extent equalities
+- geometry validity
+- branch compatibility
+- source compatibility over time
+
+This is the actual hard part.
+
+### What the current design still does not prove strongly enough
+
+Even a well-structured chunk like:
+
+```rust
+let stem = network! {
+    params(ch, plane { row, col })
+    defaults {
+        conv(on: ch, over: plane);
+    }
+    -> conv(32, kernel: 3, pad: 1)
+    -> relu
+};
+```
+
+still only says:
+- there is one `ch` axis
+- there is one two-member `plane` slot
+- the body uses those symbols consistently
+
+It does **not yet** fully say:
+- what symbolic extents those members carry
+- how output extents are derived symbolically
+- what equalities later branches must satisfy
+- how saved activations constrain later references
+
+So yes: the current design is still too weak if judged as a full typed-shape story.
+
+That weakness should be treated as a design bug, not just future polish.
+
+## Symbolic Extent Model
+
+The stronger direction is:
+
+- every input axis introduces a symbolic extent variable
+- every chunk interface member introduces symbolic extent variables
+- every transform rewrites a symbolic labeled-shape expression
+- compatibility checks are stated over those symbolic expressions
+
+Example mental model:
+
+```rust
+input(c: 3, y: 32, x: 32)
+```
+
+introduces something like:
+- `c : 3`
+- `y : 32`
+- `x : 32`
+
+More generally, a chunk interface like:
+
+```rust
+params(ch, plane { row, col })
+```
+
+should implicitly mean:
+- `ch` has some symbolic extent `C`
+- `plane.row` has some symbolic extent `H`
+- `plane.col` has some symbolic extent `W`
+
+Then:
+
+```rust
+conv(64, on: ch, over: plane, kernel: 3, pad: 1)
+```
+
+rewrites the symbolic shape from:
+- `(ch: C, plane.row: H, plane.col: W)`
+
+to:
+- `(ch: 64, plane.row: conv_out(H, 3, 1, 1), plane.col: conv_out(W, 3, 1, 1))`
+
+That is the level where residual/concat/save/from can become truly type-safe.
+
+## Adversarial Stress Tests For Dimension Safety
+
+Trying to break the DSL on dimensions exposes the next set of required contracts.
+
+### 1. Residual mismatch after hidden geometry change
+
+This should be rejected:
+
+```rust
+let block = network! {
+    params(ch, plane { row, col })
+    -> residual {
+        conv(64, on: ch, over: plane, kernel: 3, stride: 2, pad: 1)
+    }
+};
+```
+
+because the body rewrites:
+- `ch`
+- `plane.row`
+- `plane.col`
+
+and therefore cannot satisfy residual shape preservation.
+
+This requires symbolic extent rewriting, not just label tracking.
+
+### 2. Concat with branch-local extent drift
+
+This should be rejected:
+
+```rust
+network! {
+    input(c: 32, y: 56, x: 56)
+    -> concat(c) {
+        conv(32, on: c, over: [y, x], kernel: 3, pad: 1),
+        conv(32, on: c, over: [y, x], kernel: 3, stride: 2, pad: 1),
+    }
+}
+```
+
+because the non-concatenated extents of `y` and `x` no longer match.
+
+Again: label agreement is not enough.
+
+### 3. Saved-source misuse after later shape drift
+
+This should be rejected:
+
+```rust
+network! {
+    input(c: 32, y: 56, x: 56)
+    -> save(enc)
+    -> downsample(over: [y, x], factor: 2)
+    -> concat(c) {
+        current,
+        from(enc),
+    }
+}
+```
+
+unless the current branch has been restored to the saved shape.
+
+This means `save(name)` must record full symbolic labeled shape, not just a label set.
+
+### 4. Multi-input fusion with false projection agreement
+
+This should be rejected:
+
+```rust
+network! {
+    inputs {
+        left(tok: 128, feat: 768),
+        right(tok: 64, feat: 768),
+    }
+    -> concat(tok) {
+        from(left),
+        from(right),
+    }
+}
+```
+
+if the intended rule is that all non-concatenated axes agree and concat only changes `tok`.
+
+This is another place where named-source safety depends on symbolic extent checks.
+
+### 5. Structured-slot partial equivalence
+
+This should probably be rejected:
+
+```rust
+let block = network! {
+    params(ch, plane { row, col })
+    -> permute([ch, plane.col, plane.row])
+    -> conv(64, on: ch, over: plane, kernel: [3, 5], pad: [1, 2])
+};
+```
+
+unless `over: plane` is defined to preserve the declared member order of `plane` even after permutation.
+
+So structured slots need a rule:
+- are they ordered interfaces?
+- or merely named member sets?
+
+Current judgment:
+- structured slots should preserve a canonical declared member order
+- named application removes binding-order ambiguity
+- transform semantics over structured slots should use that canonical order unless they explicitly project members
+
+## Type-Safety Layers
+
+The DSL now looks like it needs multiple distinct layers of safety:
+
+1. **Symbol safety**
+   - unknown labels/slots/sources are rejected
+
+2. **Interface safety**
+   - chunk parameters are fully bound
+   - member coverage is exact
+   - slot kinds and arities match
+
+3. **Alias safety**
+   - overlapping actual-axis bindings are rejected by default
+
+4. **Shape-expression safety**
+   - transforms rewrite symbolic labeled shapes correctly
+   - residual/sum/concat compare those symbolic shapes
+
+5. **Geometry safety**
+   - kernels/strides/padding/dilation are valid for the derived extents
+
+6. **Source safety**
+   - `save(name)` / `from(name)` and named inputs preserve exact symbolic shapes
+
+7. **Output safety**
+   - `heads { ... }` yields a typed named-output signature
+
+If `tml` wants to earn “typed machine learning,” it needs a credible story for all seven layers.
+
 ## Candidate DSL: Blueprint Application With Defaults
 
 Parameterized chunks become even stronger when paired with defaults:
@@ -1686,11 +1921,13 @@ The following still need prototyping before implementation decisions are locked:
 5. Whether `linear(on: axis, out: N)` should become the general primitive, with `dense(N)` demoted to sugar.
 6. Whether structured slot parameters should replace plain axis-list slots as the primary chunk interface model.
 7. Whether chunk application should reject overlapping actual-axis bindings by default.
-8. Whether labels should preserve identity across `conv` and `linear`, or whether explicit renaming becomes necessary sooner.
-9. What the first activation-reference syntax should be for long-skip DAGs.
-10. Whether inputs and saved activations should be unified as named sources under one reference model.
-11. What the first multi-input syntax should be.
-12. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
+8. How symbolic extent variables should be represented in the DSL/core boundary.
+9. Whether structured slots should preserve canonical member order or only named membership.
+10. Whether labels should preserve identity across `conv` and `linear`, or whether explicit renaming becomes necessary sooner.
+11. What the first activation-reference syntax should be for long-skip DAGs.
+12. Whether inputs and saved activations should be unified as named sources under one reference model.
+13. What the first multi-input syntax should be.
+14. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
 
 ## Current Lean
 
@@ -1699,12 +1936,14 @@ The strongest current design stance is:
 - axis labels are open-ended DSL symbols
 - transforms explicitly say which labels they act on
 - scoped defaults remove repetition
-- parameterized reusable chunks are the strongest reuse model
+- parameterized reusable chunks are still the strongest reuse model
 - free-symbol chunks are acceptable only as a possible shorthand, not as the leading idiom
 - structured chunk interfaces may be stronger than plain axis-list slot binding
 - `params(...)` should be treated as a real interface/signature, not decoration
 - named chunk application is the strongest primary application form
 - overlapping actual-axis bindings should probably be rejected by default
+- axis/interface safety alone is not enough; symbolic extent rewriting is required for real shape safety
+- saved sources and inputs should probably share one exact symbolic-shape reference model
 - the DSL likely needs a general `linear(on: ..., out: ...)` primitive
 - inline combinator blocks are likely cleaner than nested `network!` for local structure
 - long-skip activation references are likely unavoidable for serious DAG architectures
