@@ -37,6 +37,18 @@ This project should explicitly prefer:
 - feasibility proofs over wishful thinking
 - strict idioms over vague flexibility
 
+## Macro Justification Tests
+
+`network!` is only a good idea if it continues to pass all of these tests:
+
+1. It must express architecture more clearly than plain Rust would.
+2. It must buy real compile-time checking, not just syntax sugar.
+3. It must stay a small architecture language, not a second general-purpose language.
+4. It must lower into a real core, not become the runtime itself.
+5. It must not force users into multiple equally-official API paths.
+
+If the DSL ever stops passing those tests, it should be narrowed or replaced.
+
 ## Hard Feasibility Boundaries
 
 These are the current important boundaries imposed by Rust and by the chosen DSL model.
@@ -249,6 +261,123 @@ Why this is likely feasible:
 
 This should become the leading reusable-chunk design target.
 
+## Stronger Candidate: Interface-Oriented Chunk Parameters
+
+Raw parameter lists like `params(c, y, x)` are workable, but they still leave too much
+implicit:
+- which params are single-axis slots vs axis-list slots
+- what the chunk is really asking for at the call site
+- how built-in helpers should mirror the same interface model
+
+A stronger candidate is:
+
+```rust
+let stem = network! {
+    params(ch: c, spatial: [y, x])
+    defaults {
+        conv(on: c, over: [y, x]);
+        pool(over: [y, x]);
+    }
+    -> conv(32, kernel: 3, pad: 1)
+    -> relu
+    -> pool(max, kernel: 2, stride: 2)
+};
+
+let arch = network! {
+    input(rgb: 3, row: 32, col: 32)
+    -> stem(ch: rgb, spatial: [row, col])
+    -> flatten(into: f)
+    -> dense(10)
+};
+```
+
+This separates:
+- **interface slot names**: `ch`, `spatial`
+- **local body labels**: `c`, `y`, `x`
+
+And it encodes parameter kind directly in the syntax:
+- `ch: c` is a single-axis parameter
+- `spatial: [y, x]` is a fixed-arity axis-list parameter
+
+Why this is stronger:
+- chunk interfaces become self-documenting
+- call sites become more readable
+- arity checking becomes natural
+- user-defined chunks and built-in helpers can share the same application model
+- it avoids baking a global public axis ontology into the API
+
+Current judgment:
+- this is stronger than raw `params(c, y, x)`
+- it should become the leading reusable-chunk interface model
+
+## Chunk Signatures and Parameter Safety
+
+The parameter list in a reusable chunk is not just documentation.
+
+It should be treated as a compile-time interface signature.
+
+Example:
+
+```rust
+let block = network! {
+    params(seq: [tok], feat: f)
+    -> linear(on: f, out: 768)
+};
+```
+
+The type-safety story should be:
+
+- `params(seq: [tok], feat: f)` declares formal interface slots, not arbitrary free tokens
+- each slot has a kind inferred from syntax:
+  - `feat: f` is a single-axis slot
+  - `seq: [tok]` is a one-axis-list slot
+  - `spatial: [y, x]` would be a two-axis-list slot
+- the chunk body may only reference:
+  - local symbols introduced by declared parameters
+  - labels introduced structurally inside the chunk
+  - labels introduced by nested block scopes
+- applying the chunk requires every formal interface slot to be bound exactly once
+- extra or duplicate bindings are rejected
+- named application is the primary form because order should not matter
+- axis-list parameters preserve their declared arity
+- the chunk’s output signature is derived symbolically in terms of local formal labels
+- applying the chunk remaps that derived output signature onto actual labels
+
+That means this should be rejected:
+
+```rust
+let block = network! {
+    params(seq: [tok], feat: f)
+    -> linear(on: g, out: 768)
+};
+```
+
+because `g` is neither a formal parameter nor an introduced local label.
+
+This should also be rejected:
+
+```rust
+let arch = network! {
+    input(tokens: 512, feat: 768)
+    -> block(seq: [tokens])
+};
+```
+
+because `feat` is unbound.
+
+This should also be rejected:
+
+```rust
+let arch = network! {
+    input(c: 64, y: 56, x: 56)
+    -> stem(ch: c, spatial: [y])
+};
+```
+
+because `spatial` was declared as a two-axis slot and only one axis was supplied.
+
+This is the point where `params(...)` becomes real type-safety rather than macro decoration.
+
 ## Candidate DSL: Blueprint Application With Defaults
 
 Parameterized chunks become even stronger when paired with defaults:
@@ -327,18 +456,61 @@ Possible direction:
 ```rust
 let arch = network! {
     input(c: 3, y: 224, x: 224)
-    -> vision::common::stem(c, y, x; widths: [32, 64])
-    -> vision::common::residual_block(c, y, x; width: 64)
+    -> vision::common::stem(ch: c, spatial: [y, x], widths: [32, 64])
+    -> vision::common::residual_block(ch: c, spatial: [y, x], width: 64)
     -> pool(avg, over: [y, x])
     -> flatten(into: f)
     -> dense(1000)
 };
 ```
 
-This syntax is intentionally macro-only. The semicolon separates blueprint-axis arguments
-from ordinary helper configuration.
+This syntax is intentionally macro-only.
 
-It is not yet chosen, but it is the most promising built-in-helper shape so far.
+Current judgment:
+- built-in helpers should probably expose the same interface-slot style as user chunks
+- that keeps helper calls and user-defined blueprint application in the same conceptual model
+
+## Inline Combinator Blocks
+
+Nested `network!` invocations inside `network!` are a smell.
+
+This:
+
+```rust
+-> residual(
+    network! {
+        norm(rms, over: [f])
+        -> attend(on: f, over: [tok], heads: 12)
+    }
+)
+```
+
+is workable, but it is not clean enough as the main story.
+
+A stronger direction is inline combinator blocks:
+
+```rust
+-> residual {
+    norm(rms, over: [f])
+    -> attend(on: f, over: [tok], heads: 12)
+}
+```
+
+and:
+
+```rust
+-> concat(c) {
+    conv(32, on: c, over: [y, x], kernel: 1),
+    conv(32, on: c, over: [y, x], kernel: 3, pad: 1),
+    conv(32, on: c, over: [y, x], kernel: 5, pad: 2),
+}
+```
+
+This keeps one language and avoids nested macro noise.
+
+Current judgment:
+- inline combinator blocks are likely better than nested `network!` values for the common path
+- nested reusable chunks still matter for named reuse and parameterization
 
 ## Parameter Declaration and Application
 
@@ -364,7 +536,7 @@ Cons:
 Current judgment:
 - reject as the leading idiom
 
-#### Candidate B: explicit `params(...)` header
+#### Candidate B: explicit raw `params(...)` header
 
 ```rust
 network! {
@@ -384,6 +556,30 @@ Cons:
 
 Current judgment:
 - strongest declaration form
+
+#### Candidate C: interface-oriented `params(...)` header
+
+```rust
+network! {
+    params(ch: c, spatial: [y, x])
+    ...
+}
+```
+
+Pros:
+- makes slot kinds explicit
+- separates public chunk interface names from local internal labels
+- makes call sites much clearer
+- gives built-in helpers and user chunks the same application shape
+- scales better beyond simple CNN examples
+
+Cons:
+- more syntax to parse
+- slightly more verbose
+
+Current judgment:
+- strongest overall declaration form
+- should likely replace raw `params(c, y, x)` as the primary idiom
 
 ### Application syntax candidates
 
@@ -405,7 +601,7 @@ Current judgment:
 - maybe acceptable as shorthand
 - not the best primary documented form
 
-#### Candidate B: named application
+#### Candidate B: named application for raw params
 
 ```rust
 -> stem(c: rgb, y: row, x: col)
@@ -422,7 +618,25 @@ Cons:
 Current judgment:
 - strongest primary documented form
 
-#### Candidate C: shorthand application when names align
+#### Candidate C: named application for interface-oriented params
+
+```rust
+-> stem(ch: rgb, spatial: [row, col])
+```
+
+Pros:
+- exposes the chunk interface instead of its implementation-local symbols
+- naturally supports fixed-arity axis-list binding
+- aligns cleanly with built-in helper syntax
+- is the clearest story for type-safe reuse
+
+Cons:
+- more verbose than positional application
+
+Current judgment:
+- strongest primary application form overall
+
+#### Candidate D: shorthand application when names align
 
 ```rust
 -> stem(c, y, x)
@@ -442,15 +656,15 @@ Current judgment:
 
 The strongest combination right now is:
 
-- declare reusable chunks with `params(...)`
-- document named application as the main form
+- declare reusable chunks with interface-oriented `params(...)`
+- document interface-slot application as the main form
 - optionally support shorthand positional-or-elided application only as sugar
 
 Examples:
 
 ```rust
 let stem = network! {
-    params(c, y, x)
+    params(ch: c, spatial: [y, x])
     defaults {
         conv(on: c, over: [y, x]);
     }
@@ -460,14 +674,14 @@ let stem = network! {
 
 let cifar = network! {
     input(c: 3, y: 32, x: 32)
-    -> stem(c, y, x)
+    -> stem(ch: c, spatial: [y, x])
     -> flatten(into: f)
     -> dense(10)
 };
 
 let microscope = network! {
     input(channels: 1, row: 128, col: 128)
-    -> stem(c: channels, y: row, x: col)
+    -> stem(ch: channels, spatial: [row, col])
     -> flatten(into: feat)
     -> dense(2)
 };
@@ -608,7 +822,7 @@ Example:
 
 ```rust
 let mlp = network! {
-    params(tok, f)
+    params(seq: [tok], feat: f)
     -> linear(on: f, out: 3072)
     -> gelu
     -> linear(on: f, out: 768)
@@ -644,21 +858,17 @@ Candidate direction:
 
 ```rust
 let block = network! {
-    params(tok, f)
-    -> residual(
-        network! {
-            norm(rms, over: [f])
-            -> attend(on: f, over: [tok], heads: 12)
-        }
-    )
-    -> residual(
-        network! {
-            norm(rms, over: [f])
-            -> linear(on: f, out: 3072)
-            -> gelu
-            -> linear(on: f, out: 768)
-        }
-    )
+    params(seq: [tok], feat: f)
+    -> residual {
+        norm(rms, over: [f])
+        -> attend(on: f, over: [tok], heads: 12)
+    }
+    -> residual {
+        norm(rms, over: [f])
+        -> linear(on: f, out: 3072)
+        -> gelu
+        -> linear(on: f, out: 768)
+    }
 };
 ```
 
@@ -666,6 +876,7 @@ This is important because it pressure-tests:
 - per-axis projection
 - per-axis normalization
 - residual blocks beyond CNNs
+- type-safe reusable chunk interfaces beyond image-style naming
 
 ### 4. Structural transforms need to become first-class
 
@@ -687,18 +898,18 @@ let arch = network! {
     -> patchify(over: [y, x], into: tok, patch: 16)
     -> linear(on: c, out: 768)
     -> repeat(12, network! {
-        params(tok, f)
-        -> residual(network! {
+        params(seq: [tok], feat: f)
+        -> residual {
             norm(rms, over: [f])
             -> attend(on: f, over: [tok], heads: 12)
-        })
-        -> residual(network! {
+        }
+        -> residual {
             norm(rms, over: [f])
             -> linear(on: f, out: 3072)
             -> gelu
             -> linear(on: f, out: 768)
-        })
-    }(tok: tok, f: c))
+        }
+    }(seq: [tok], feat: c))
     -> reduce(mean, over: [tok])
     -> dense(1000)
 };
@@ -712,6 +923,12 @@ The current language can express local branches and residuals, but that is not e
 FPN, or other architectures with long-lived skip activations.
 
 That means the DSL likely needs an explicit activation-reference mechanism.
+
+The strongest current idea is:
+- `save(name)` stores the current activation under a label
+- `from(name)` reintroduces a previously saved activation as a branch source
+
+This is also the likely foundation for future multi-input handling.
 
 Candidate direction:
 
@@ -757,6 +974,14 @@ network! {
 ```
 
 Even if this is not implemented yet, the single-input assumption should not harden into the core.
+
+The most interesting design connection here is:
+
+- named inputs are just initial saved activations
+- long skips are saved intermediate activations
+- both may be handled by one graph-reference mechanism
+
+That suggests the language should avoid solving these as two unrelated subsystems.
 
 ### 7. Graph and irregular domains should not be forced into fake convolution language
 
@@ -898,7 +1123,7 @@ let arch = network! {
 
 ```rust
 let stem = network! {
-    params(c, y, x)
+    params(ch: c, spatial: [y, x])
     defaults {
         conv(on: c, over: [y, x]);
     }
@@ -908,14 +1133,14 @@ let stem = network! {
 
 let cifar = network! {
     input(c: 3, y: 32, x: 32)
-    -> stem(c, y, x)
+    -> stem(ch: c, spatial: [y, x])
     -> flatten(into: f)
     -> dense(10)
 };
 
 let microscope = network! {
     input(channels: 1, row: 128, col: 128)
-    -> stem(c: channels, y: row, x: col)
+    -> stem(ch: channels, spatial: [row, col])
     -> flatten(into: feat)
     -> dense(2)
 };
@@ -926,9 +1151,9 @@ let microscope = network! {
 ```rust
 let arch = network! {
     input(c: 3, y: 224, x: 224)
-    -> vision::common::stem(c, y, x; widths: [32, 64])
-    -> vision::common::residual_block(c, y, x; width: 64)
-    -> vision::common::residual_block(c, y, x; width: 64)
+    -> vision::common::stem(ch: c, spatial: [y, x], widths: [32, 64])
+    -> vision::common::residual_block(ch: c, spatial: [y, x], width: 64)
+    -> vision::common::residual_block(ch: c, spatial: [y, x], width: 64)
     -> pool(avg, over: [y, x])
     -> flatten(into: f)
     -> dense(1000)
@@ -939,27 +1164,23 @@ let arch = network! {
 
 ```rust
 let block = network! {
-    params(tok, f)
-    -> residual(
-        network! {
-            norm(rms, over: [f])
-            -> attend(on: f, over: [tok], heads: 12)
-        }
-    )
-    -> residual(
-        network! {
-            norm(rms, over: [f])
-            -> linear(on: f, out: 3072)
-            -> gelu
-            -> linear(on: f, out: 768)
-        }
-    )
+    params(seq: [tok], feat: f)
+    -> residual {
+        norm(rms, over: [f])
+        -> attend(on: f, over: [tok], heads: 12)
+    }
+    -> residual {
+        norm(rms, over: [f])
+        -> linear(on: f, out: 3072)
+        -> gelu
+        -> linear(on: f, out: 768)
+    }
 };
 
 let arch = network! {
     input(tok: 512, f: 768)
-    -> block(tok: tok, f: f)
-    -> block(tok: tok, f: f)
+    -> block(seq: [tok], feat: f)
+    -> block(seq: [tok], feat: f)
     -> reduce(mean, over: [tok])
     -> dense(2)
 };
@@ -990,7 +1211,16 @@ let arch = network! {
         image(c: 3, y: 224, x: 224),
         text(tok: 77, f: 768),
     }
-    -> ...
+    -> concat(f) {
+        from(image)
+        -> vision::common::stem(ch: c, spatial: [y, x], widths: [32, 64])
+        -> reduce(mean, over: [y, x]),
+
+        from(text)
+        -> sequence::transformer::encoder(seq: [tok], feat: f, depth: 6, heads: 12)
+        -> reduce(mean, over: [tok]),
+    }
+    -> linear(on: f, out: 2)
 };
 ```
 
@@ -999,8 +1229,8 @@ let arch = network! {
 ```rust
 let arch = network! {
     input(node: 1024, feat: 128, edge: 4096)
-    -> graph::common::message_pass(node, feat, edge; out: 256)
-    -> graph::common::message_pass(node, feat, edge; out: 256)
+    -> graph::common::message_pass(nodes: node, feat: feat, edges: edge, out: 256)
+    -> graph::common::message_pass(nodes: node, feat: feat, edges: edge, out: 256)
     -> reduce(mean, over: [node])
     -> dense(10)
 };
@@ -1038,7 +1268,7 @@ Current judgment:
 - acceptable as an implementation stepping stone
 - not the best long-term public idiom
 
-### Option B: Parameterized chunks
+### Option B: Raw parameterized chunks
 
 Example:
 
@@ -1063,16 +1293,44 @@ Cons:
 - adds application syntax and parser complexity
 
 Current judgment:
+- workable, but no longer the strongest candidate
+
+### Option C: Interface-oriented parameterized chunks
+
+Example:
+
+```rust
+let stem = network! {
+    params(ch: c, spatial: [y, x])
+    defaults {
+        conv(on: c, over: [y, x]);
+    }
+    -> conv(32, kernel: 3, pad: 1)
+    -> relu
+};
+```
+
+Pros:
+- interface-slot kinds are explicit
+- call sites are clearer
+- fixed-arity axis-list binding is natural
+- built-in helpers can mirror the same model directly
+
+Cons:
+- a bit more verbose
+- needs slightly richer parser support
+
+Current judgment:
 - strongest overall candidate
 
-### Option C: Built-in helper intrinsics only
+### Option D: Built-in helper intrinsics only
 
 Example:
 
 ```rust
 network! {
     input(c: 3, y: 224, x: 224)
-    -> vision::common::stem(c, y, x; widths: [32, 64])
+    -> vision::common::stem(ch: c, spatial: [y, x], widths: [32, 64])
 }
 ```
 
@@ -1116,34 +1374,34 @@ This keeps transform meaning local and avoids hidden ontology.
 
 This should become the idiomatic way to remove repetition.
 
-### 5. Prefer `params(...)` for reusable chunks
+### 5. Prefer interface-oriented `params(...)` for reusable chunks
 
 Prefer:
 
 ```rust
 let stem = network! {
-    params(c, y, x)
+    params(ch: c, spatial: [y, x])
     ...
 };
 ```
 
-Avoid using closure-like pipe syntax as the leading documented pattern.
+Avoid using closure-like pipe syntax or raw unnamed parameter lists as the leading documented pattern.
 
-### 6. Prefer named chunk application when labels differ
+### 6. Prefer interface-slot application
 
 Prefer:
 
 ```rust
--> stem(c: channels, y: row, x: col)
+-> stem(ch: channels, spatial: [row, col])
 ```
 
 Allow:
 
 ```rust
--> stem(c, y, x)
+-> stem(ch: c, spatial: [y, x])
 ```
 
-only as shorthand when names intentionally align.
+as the normal explicit form. Raw positional shorthand should only exist, if at all, as undocumented sugar.
 
 ### 7. Keep frequently-transformed axes short
 
@@ -1173,13 +1431,13 @@ Avoid:
 Prefer forms like:
 
 ```rust
--> vision::common::stem(c, y, x; widths: [32, 64])
+-> vision::common::stem(ch: c, spatial: [y, x], widths: [32, 64])
 ```
 
 or:
 
 ```rust
--> vision::common::stem(c: channels, y: row, x: col; widths: [32, 64])
+-> vision::common::stem(ch: channels, spatial: [row, col], widths: [32, 64])
 ```
 
 The helper story should not feel like a separate subsystem.
@@ -1213,6 +1471,23 @@ Domain helpers should be:
 
 not a second architecture subsystem.
 
+### 13. Reusable chunks must have explicit interfaces
+
+`params(...)` is not optional decoration.
+
+It is the chunk interface and should be documented that way.
+
+### 14. Prefer inline combinator blocks for local graph structure
+
+Prefer:
+
+```rust
+-> residual { ... }
+-> concat(c) { ... }
+```
+
+over nested `network!` blocks for common inline cases.
+
 ## What Still Needs Proof
 
 The following still need prototyping before implementation decisions are locked:
@@ -1224,8 +1499,9 @@ The following still need prototyping before implementation decisions are locked:
 5. Whether `linear(on: axis, out: N)` should become the general primitive, with `dense(N)` demoted to sugar.
 6. Whether labels should preserve identity across `conv` and `linear`, or whether explicit renaming becomes necessary sooner.
 7. What the first activation-reference syntax should be for long-skip DAGs.
-8. What the first multi-input syntax should be.
-9. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
+8. Whether inputs and saved activations should be unified as named sources under one reference model.
+9. What the first multi-input syntax should be.
+10. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
 
 ## Current Lean
 
@@ -1236,10 +1512,13 @@ The strongest current design stance is:
 - scoped defaults remove repetition
 - parameterized reusable chunks are the strongest reuse model
 - free-symbol chunks are acceptable only as a possible shorthand, not as the leading idiom
-- `params(...)` is the strongest chunk declaration form
+- interface-oriented `params(...)` is the strongest chunk declaration form
+- `params(...)` should be treated as a real interface/signature, not decoration
 - named chunk application is the strongest primary application form
 - the DSL likely needs a general `linear(on: ..., out: ...)` primitive
+- inline combinator blocks are likely cleaner than nested `network!` for local structure
 - long-skip activation references are likely unavoidable for serious DAG architectures
+- inputs and long-skip references likely want one underlying named-source model
 - multi-input syntax should be treated as a real requirement, not a niche extension
 - built-in helper namespaces are acceptable, but only inside `network!`
 - built-in helpers should conceptually be predeclared parameterized blueprint templates
