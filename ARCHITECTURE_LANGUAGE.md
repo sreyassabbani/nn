@@ -38,6 +38,34 @@ The current implementation lowers those named-source stages into the existing tr
 reusing the saved prefix blueprint. That is intentionally a prototype move: it proves the user
 surface and the type rules before a deeper graph runtime exists.
 
+## Named-source runtime direction
+
+The current named-source implementation is the right prototype, but probably not the right final
+runtime model.
+
+Why it is good enough for now:
+- it validates the `save(name)` / `sum_from(name)` / `concat_from(name, axis)` surface
+- it preserves the existing typed tree algebra
+- it forces shape and merge constraints through the existing compile-time machinery
+- it lets the API get pressure-tested before a larger runtime rewrite
+
+Why it should probably not become permanent:
+- it recomputes the saved prefix instead of truly capturing an intermediate activation
+- that is semantically acceptable only while transforms remain pure and deterministic
+- once the library grows stateful or stochastic transforms, recomputation stops being equivalent
+- it also duplicates work compared with a true graph runtime
+
+So the current recommendation is:
+- keep the named-source lowering as the prototype path for now
+- deepen to a true graph runtime only when one of these becomes necessary:
+  - arbitrary `from(name)` reuse that is not just an immediate merge
+  - multi-input / multi-source graph composition
+  - stateful or stochastic transforms
+  - runtime efficiency becoming materially important for skip-heavy models
+
+Heavier API sketches that are useful for design pressure-testing but too expensive to keep in
+Cargo's normal example target set live under `/Users/sreysus/workflow/tml/api-previews/`.
+
 ## Development Philosophy
 
 The development loop for the DSL should be strict and repetitive:

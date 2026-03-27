@@ -220,7 +220,10 @@ fn distinct_fragment_bindings_do_not_accidentally_share_parameters() {
         input(channels: 2, height: 8, width: 8) -> share(left) -> share(right) -> flatten -> dense(1)
     };
 
-    assert_eq!(separately_shared.parameter_count(), unshared.parameter_count());
+    assert_eq!(
+        separately_shared.parameter_count(),
+        unshared.parameter_count()
+    );
 }
 
 #[test]

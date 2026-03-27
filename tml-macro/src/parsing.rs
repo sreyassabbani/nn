@@ -195,9 +195,8 @@ fn parse_concat_from(input: ParseStream) -> Result<StepAst> {
     content.parse::<Token![,]>()?;
     let axis: Ident = content.parse()?;
     if !content.is_empty() {
-        return Err(content.error(
-            "concat_from(name, axis) expects exactly a saved source name and an axis",
-        ));
+        return Err(content
+            .error("concat_from(name, axis) expects exactly a saved source name and an axis"));
     }
     Ok(StepAst::ConcatFrom { name, axis })
 }

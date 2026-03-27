@@ -286,12 +286,10 @@ fn load_saved_source(
     saved: &BTreeMap<String, TokenStream2>,
     name: &syn::Ident,
 ) -> Result<TokenStream2> {
-    saved.get(&name.to_string()).cloned().ok_or_else(|| {
-        Error::new(
-            name.span(),
-            format!("unknown saved source `{}`", name),
-        )
-    })
+    saved
+        .get(&name.to_string())
+        .cloned()
+        .ok_or_else(|| Error::new(name.span(), format!("unknown saved source `{}`", name)))
 }
 
 fn fold_branches<F>(branches: &[PipelineAst], combine: F) -> Result<TokenStream2>
