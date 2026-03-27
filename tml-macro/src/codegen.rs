@@ -3,7 +3,7 @@ use crate::ast::{
 };
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use syn::{Error, Expr, ExprLit, ExprTuple, Lit, Result, spanned::Spanned};
+use syn::{Error, Expr, ExprLit, ExprPath, ExprTuple, Lit, Result, spanned::Spanned};
 
 pub fn generate_network(ast: &NetworkAst) -> Result<TokenStream2> {
     match ast.input.as_ref() {
@@ -186,14 +186,25 @@ fn lower_share(expr: &Expr) -> Result<TokenStream2> {
 }
 
 fn lower_share_expr(expr: &Expr) -> Result<TokenStream2> {
-    if !matches!(expr, Expr::Path(_)) {
+    let Expr::Path(ExprPath { path, .. }) = expr else {
         return Err(Error::new(
             expr.span(),
             "share(...) only accepts a previously bound fragment identifier in this redesign",
         ));
+    };
+
+    if path.segments.len() != 1 {
+        return Err(Error::new(
+            expr.span(),
+            "share(...) only accepts a local fragment binding, not a path expression",
+        ));
     }
 
-    Ok(quote! { ::tml::share_fragment(&#expr) })
+    let share_id = quote! {
+        ::tml::shared_name_id(concat!(module_path!(), "::", stringify!(#expr)))
+    };
+
+    Ok(quote! { ::tml::share_fragment_with_id(&#expr, #share_id) })
 }
 
 fn lower_repeat(times: &syn::LitInt, body: &Expr) -> Result<TokenStream2> {

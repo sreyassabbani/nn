@@ -7,7 +7,7 @@ mod fragments;
 mod runtime;
 mod transforms;
 
-pub use fragments::{Fragment, FragmentExt, into_blueprint, share_fragment};
+pub use fragments::{Fragment, FragmentExt, into_blueprint, share_fragment, share_fragment_with_id};
 pub use runtime::{GraphRuntime, MaterializeContext};
 #[allow(unused_imports)]
 pub use transforms::{

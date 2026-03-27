@@ -127,7 +127,7 @@ fn repeat_accepts_shape_preserving_blocks() {
     assert_eq!(out.len(), 1);
 }
 
-fn user_defined_stem() -> tml::Blueprint<vision::common::StemSpec<2, 2>> {
+fn user_defined_stem() -> vision::common::Stem<2, 2> {
     vision::common::stem::<2, 2>()
 }
 
@@ -138,7 +138,7 @@ impl tml::Fragment for NamedStem {
     type Spec = vision::common::StemSpec<2, 2>;
 
     fn into_blueprint(self) -> tml::Blueprint<Self::Spec> {
-        vision::common::stem::<2, 2>()
+        tml::into_blueprint(vision::common::stem::<2, 2>())
     }
 }
 
@@ -171,6 +171,21 @@ fn named_rust_defined_fragments_can_be_shared_by_the_macro() {
     };
 
     assert!(shared.parameter_count() < unshared.parameter_count());
+}
+
+#[test]
+fn distinct_fragment_bindings_do_not_accidentally_share_parameters() {
+    let left = vision::common::stem::<2, 2>();
+    let right = vision::common::stem::<2, 2>();
+
+    let unshared = network! {
+        input(channels: 2, height: 8, width: 8) -> left -> right -> flatten -> dense(1)
+    };
+    let separately_shared = network! {
+        input(channels: 2, height: 8, width: 8) -> share(left) -> share(right) -> flatten -> dense(1)
+    };
+
+    assert_eq!(separately_shared.parameter_count(), unshared.parameter_count());
 }
 
 #[test]

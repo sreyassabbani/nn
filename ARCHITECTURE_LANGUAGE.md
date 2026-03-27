@@ -233,17 +233,31 @@ The prototype currently supports:
 - named fragment values
 - direct fragment factory calls
 - named Rust fragment types implementing `Fragment`
-- sharing named fragment values with `share(name)`
+- sharing named fragment bindings with `share(name)`
 
 The prototype currently does **not** cleanly support:
 - arbitrary `impl Fragment` opaque return types flowing through rooted typed validation
 
 So the current practical idiom is:
-- return concrete `Blueprint<Spec>` values from reusable fragment factories
-- or define named Rust fragment types that implement `Fragment`
+- prefer named Rust fragment types that implement `Fragment`
+- let helper functions return those named fragment types
 - or bind fragment values before inserting them into `network!`
 
 This is an important real constraint from Rust's type system, not just a style preference.
+
+Built-in fragments should follow that same rule too. A cleaner public shape is:
+
+```rust
+let stem = vision::common::stem::<32, 64>();
+```
+
+where `stem::<...>()` returns a named fragment type like `vision::common::Stem<32, 64>`,
+not a raw `Blueprint<SeqSpec<...>>`.
+
+Sharing should also follow the Rust-binding model:
+- `share(stem)` should mean "reuse the parameters for this named fragment binding"
+- sharing identity should not depend on ZST addresses or other runtime object quirks
+- different bindings with the same underlying fragment type should not accidentally share
 
 Because of that, free-symbol chunks should no longer be treated as the leading candidate.
 

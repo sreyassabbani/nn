@@ -29,9 +29,16 @@ pub fn share_fragment<F>(fragment: &F) -> Blueprint<SharedSpec<F::Spec>>
 where
     F: Fragment,
 {
+    share_fragment_with_id(fragment, fragment as *const F as *const () as usize)
+}
+
+pub fn share_fragment_with_id<F>(fragment: &F, id: usize) -> Blueprint<SharedSpec<F::Spec>>
+where
+    F: Fragment,
+{
     let blueprint = fragment.clone().into_blueprint();
     Blueprint::new(SharedSpec {
-        id: fragment as *const F as *const () as usize,
+        id,
         inner: blueprint.into_inner(),
     })
 }

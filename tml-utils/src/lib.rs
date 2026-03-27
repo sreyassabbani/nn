@@ -101,8 +101,8 @@ pub use blueprint::{
     Axis, Blueprint, BlueprintSpec, Fragment, FragmentExt, GraphRuntime, HeadsSpec, InitConfig,
     MaterializeContext, Model, PredictRuntime, TrainRuntime, TransformSpec, concat, conv, dense,
     dense_no_bias, features_input, flatten, identity, image_input, into_blueprint, relu,
-    repeat_stage, residual, root, share, share_fragment, sigmoid, sum, validate_blueprint,
-    validate_headed_blueprint, volume_input,
+    repeat_stage, residual, root, share, share_fragment, share_fragment_with_id, sigmoid, sum,
+    validate_blueprint, validate_headed_blueprint, volume_input,
 };
 pub use data::Sample;
 pub use network::{
@@ -114,6 +114,19 @@ pub use shape::TensorShape;
 #[doc(hidden)]
 pub use tensor::__tensor_from_literal;
 pub use tensor::{Tensor, TensorMut, TensorRef};
+
+#[doc(hidden)]
+pub const fn shared_name_id(name: &str) -> usize {
+    let bytes = name.as_bytes();
+    let mut hash = 1469598103934665603usize;
+    let mut idx = 0;
+    while idx < bytes.len() {
+        hash ^= bytes[idx] as usize;
+        hash = hash.wrapping_mul(1099511628211usize);
+        idx += 1;
+    }
+    hash
+}
 
 // helper stuff for proc macro
 pub mod network;
