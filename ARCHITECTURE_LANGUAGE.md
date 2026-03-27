@@ -216,7 +216,8 @@ This is now the strongest reusable-chunk candidate.
 Example:
 
 ```rust
-let stem = network! { |c, y, x|
+let stem = network! {
+    params(c, y, x)
     defaults {
         conv(on: c, over: [y, x]);
         pool(over: [y, x]);
@@ -228,7 +229,7 @@ let stem = network! { |c, y, x|
 
 let arch = network! {
     input(rgb: 3, row: 32, col: 32)
-    -> stem(rgb, row, col)
+    -> stem(c: rgb, y: row, x: col)
     -> flatten(into: f)
     -> dense(10)
 };
@@ -242,8 +243,8 @@ Why this is stronger than free-symbol chunks:
 - users can bind architecture-local names to chunk-local parameters explicitly
 
 Why this is likely feasible:
-- `network!` can parse a leading parameter list such as `|c, y, x|`
-- `network!` can parse `stem(rgb, row, col)` as blueprint application syntax
+- `network!` can parse a header such as `params(c, y, x)`
+- `network!` can parse `stem(c: rgb, y: row, x: col)` as blueprint application syntax
 - the macro can enforce arity and symbol binding at expansion time
 
 This should become the leading reusable-chunk design target.
@@ -253,7 +254,8 @@ This should become the leading reusable-chunk design target.
 Parameterized chunks become even stronger when paired with defaults:
 
 ```rust
-let residual_block = network! { |c, y, x|
+let residual_block = network! {
+    params(c, y, x)
     defaults {
         conv(on: c, over: [y, x]);
     }
@@ -268,8 +270,8 @@ let residual_block = network! { |c, y, x|
 
 let arch = network! {
     input(ch: 64, h: 56, w: 56)
-    -> residual_block(ch, h, w)
-    -> residual_block(ch, h, w)
+    -> residual_block(c: ch, y: h, x: w)
+    -> residual_block(c: ch, y: h, x: w)
     -> flatten(into: f)
     -> dense(1000)
 };
@@ -337,6 +339,139 @@ This syntax is intentionally macro-only. The semicolon separates blueprint-axis 
 from ordinary helper configuration.
 
 It is not yet chosen, but it is the most promising built-in-helper shape so far.
+
+## Parameter Declaration and Application
+
+This now needs stricter choices.
+
+### Declaration syntax candidates
+
+#### Candidate A: closure-like pipes
+
+```rust
+network! { |c, y, x| ... }
+```
+
+Pros:
+- short
+- visually suggests abstraction
+
+Cons:
+- looks too much like ordinary Rust closure syntax
+- suggests capture/value semantics that do not exist here
+- makes the DSL feel less like one coherent language and more like macro trickery
+
+Current judgment:
+- reject as the leading idiom
+
+#### Candidate B: explicit `params(...)` header
+
+```rust
+network! {
+    params(c, y, x)
+    ...
+}
+```
+
+Pros:
+- self-describing
+- clearly DSL-specific
+- aligns with other header-like constructs such as `input(...)` and `defaults { ... }`
+- easier to document as formal blueprint parameters, not runtime values
+
+Cons:
+- slightly more verbose
+
+Current judgment:
+- strongest declaration form
+
+### Application syntax candidates
+
+#### Candidate A: positional application
+
+```rust
+-> stem(rgb, row, col)
+```
+
+Pros:
+- short
+
+Cons:
+- order-sensitive
+- weak readability once there are more than two or three labels
+- mismatches the goal of strict, explicit idioms
+
+Current judgment:
+- maybe acceptable as shorthand
+- not the best primary documented form
+
+#### Candidate B: named application
+
+```rust
+-> stem(c: rgb, y: row, x: col)
+```
+
+Pros:
+- explicit
+- robust to reordering
+- much clearer for helpers with more than two parameters
+
+Cons:
+- more verbose
+
+Current judgment:
+- strongest primary documented form
+
+#### Candidate C: shorthand application when names align
+
+```rust
+-> stem(c, y, x)
+```
+
+This should be treated as possible sugar for:
+
+```rust
+-> stem(c: c, y: y, x: x)
+```
+
+Current judgment:
+- good optional shorthand
+- only when formal and actual labels intentionally match
+
+### Current recommendation
+
+The strongest combination right now is:
+
+- declare reusable chunks with `params(...)`
+- document named application as the main form
+- optionally support shorthand positional-or-elided application only as sugar
+
+Examples:
+
+```rust
+let stem = network! {
+    params(c, y, x)
+    defaults {
+        conv(on: c, over: [y, x]);
+    }
+    -> conv(32, kernel: 3, pad: 1)
+    -> relu
+};
+
+let cifar = network! {
+    input(c: 3, y: 32, x: 32)
+    -> stem(c, y, x)
+    -> flatten(into: f)
+    -> dense(10)
+};
+
+let microscope = network! {
+    input(channels: 1, row: 128, col: 128)
+    -> stem(c: channels, y: row, x: col)
+    -> flatten(into: feat)
+    -> dense(2)
+};
+```
 
 ## Transform Semantics
 
@@ -538,7 +673,8 @@ let arch = network! {
 ### 8. Reusable user-defined conv chunk across different local labels
 
 ```rust
-let stem = network! { |c, y, x|
+let stem = network! {
+    params(c, y, x)
     defaults {
         conv(on: c, over: [y, x]);
     }
@@ -555,7 +691,7 @@ let cifar = network! {
 
 let microscope = network! {
     input(channels: 1, row: 128, col: 128)
-    -> stem(channels, row, col)
+    -> stem(c: channels, y: row, x: col)
     -> flatten(into: feat)
     -> dense(2)
 };
@@ -612,7 +748,8 @@ Current judgment:
 Example:
 
 ```rust
-let stem = network! { |c, y, x|
+let stem = network! {
+    params(c, y, x)
     defaults {
         conv(on: c, over: [y, x]);
     }
@@ -684,7 +821,36 @@ This keeps transform meaning local and avoids hidden ontology.
 
 This should become the idiomatic way to remove repetition.
 
-### 5. Keep frequently-transformed axes short
+### 5. Prefer `params(...)` for reusable chunks
+
+Prefer:
+
+```rust
+let stem = network! {
+    params(c, y, x)
+    ...
+};
+```
+
+Avoid using closure-like pipe syntax as the leading documented pattern.
+
+### 6. Prefer named chunk application when labels differ
+
+Prefer:
+
+```rust
+-> stem(c: channels, y: row, x: col)
+```
+
+Allow:
+
+```rust
+-> stem(c, y, x)
+```
+
+only as shorthand when names intentionally align.
+
+### 7. Keep frequently-transformed axes short
 
 Preferred conventions in examples and docs:
 - `c` for channel-like or feature-carrier axis in convolutional pipelines
@@ -695,7 +861,7 @@ Preferred conventions in examples and docs:
 
 These are not mandatory globally, but they should likely be the house style in docs and built-ins.
 
-### 6. Put reusable built-in helpers under domain namespaces
+### 8. Put reusable built-in helpers under domain namespaces
 
 Prefer:
 - `vision::common::stem(...)`
@@ -707,7 +873,23 @@ Avoid:
 - flat `vision::stem(...)` if the namespace is likely to grow crowded
 - ad hoc root-level helper names that are hard to organize later
 
-### 7. Do not expose ontology-like axis names as the main story
+### 9. Built-in helpers should mirror user-defined chunk application
+
+Prefer forms like:
+
+```rust
+-> vision::common::stem(c, y, x; widths: [32, 64])
+```
+
+or:
+
+```rust
+-> vision::common::stem(c: channels, y: row, x: col; widths: [32, 64])
+```
+
+The helper story should not feel like a separate subsystem.
+
+### 10. Do not expose ontology-like axis names as the main story
 
 The DSL should not teach users that they must think in terms of an approved set of semantic axis roles.
 
@@ -715,8 +897,8 @@ The DSL should not teach users that they must think in terms of an approved set 
 
 The following still need prototyping before implementation decisions are locked:
 
-1. Whether free axis symbols in reusable blueprint chunks are ergonomically understandable.
-2. Whether parameterized chunks should supersede free-symbol chunks entirely in the public docs.
+1. Whether free-symbol chunks should survive at all, or be kept only as an internal stepping stone.
+2. Whether named application should be the only documented form, with shorthand intentionally undocumented.
 3. Whether `defaults { ... }` should be block-scoped or whole-pipeline scoped.
 4. Whether built-in helper invocations inside `network!` are worth the parser complexity.
 5. Whether labels should preserve identity across `conv`, or whether explicit renaming becomes necessary sooner.
@@ -731,6 +913,8 @@ The strongest current design stance is:
 - scoped defaults remove repetition
 - parameterized reusable chunks are the strongest reuse model
 - free-symbol chunks are acceptable only as a possible shorthand, not as the leading idiom
+- `params(...)` is the strongest chunk declaration form
+- named chunk application is the strongest primary application form
 - built-in helper namespaces are acceptable, but only inside `network!`
 - built-in helpers should conceptually be predeclared parameterized blueprint templates
 - no public semantic axis taxonomy unless a real implementation pressure makes it unavoidable
