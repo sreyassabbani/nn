@@ -2,6 +2,9 @@
 
 This document is the current high-level backlog and ideation scratchpad for `tml`.
 
+For the current source of truth on the `network!` DSL redesign, see
+[ARCHITECTURE_LANGUAGE](ARCHITECTURE_LANGUAGE.md).
+
 It is intentionally a mix of:
 - product direction
 - public API design goals
