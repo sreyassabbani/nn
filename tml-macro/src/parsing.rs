@@ -70,6 +70,9 @@ fn parse_step(input: ParseStream) -> Result<StepAst> {
                 let _: Ident = input.parse()?;
                 Ok(StepAst::Flatten)
             }
+            "save" => parse_save(input),
+            "sum_from" => parse_sum_from(input),
+            "concat_from" => parse_concat_from(input),
             "share" => parse_share(input),
             "residual" => parse_residual(input),
             "repeat" => parse_repeat(input),
@@ -160,6 +163,43 @@ fn parse_share(input: ParseStream) -> Result<StepAst> {
     parenthesized!(content in input);
     let expr: Expr = content.parse()?;
     Ok(StepAst::Share(expr))
+}
+
+fn parse_save(input: ParseStream) -> Result<StepAst> {
+    let _: Ident = input.parse()?;
+    let content;
+    parenthesized!(content in input);
+    let name: Ident = content.parse()?;
+    if !content.is_empty() {
+        return Err(content.error("save(name) expects a single source name"));
+    }
+    Ok(StepAst::Save { name })
+}
+
+fn parse_sum_from(input: ParseStream) -> Result<StepAst> {
+    let _: Ident = input.parse()?;
+    let content;
+    parenthesized!(content in input);
+    let name: Ident = content.parse()?;
+    if !content.is_empty() {
+        return Err(content.error("sum_from(name) expects a single saved source name"));
+    }
+    Ok(StepAst::SumFrom { name })
+}
+
+fn parse_concat_from(input: ParseStream) -> Result<StepAst> {
+    let _: Ident = input.parse()?;
+    let content;
+    parenthesized!(content in input);
+    let name: Ident = content.parse()?;
+    content.parse::<Token![,]>()?;
+    let axis: Ident = content.parse()?;
+    if !content.is_empty() {
+        return Err(content.error(
+            "concat_from(name, axis) expects exactly a saved source name and an axis",
+        ));
+    }
+    Ok(StepAst::ConcatFrom { name, axis })
 }
 
 fn parse_residual(input: ParseStream) -> Result<StepAst> {

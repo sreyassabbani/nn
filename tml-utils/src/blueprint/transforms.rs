@@ -513,8 +513,10 @@ where
     }
 }
 
-impl<const A: usize, const B: usize> ConcatAlong<shape!(A), shape!(A), shape!(B)> for ()
+impl<InputShape, const A: usize, const B: usize> ConcatAlong<InputShape, shape!(A), shape!(B)>
+    for ()
 where
+    InputShape: TensorShape + 'static,
     [(); A + B]:,
 {
     type OutputShape = shape!(A + B);
@@ -523,9 +525,10 @@ where
     }
 }
 
-impl<const C1: usize, const C2: usize, const H: usize, const W: usize>
-    ConcatAlong<shape!(C1, H, W), shape!(C1, H, W), shape!(C2, H, W)> for ()
+impl<InputShape, const C1: usize, const C2: usize, const H: usize, const W: usize>
+    ConcatAlong<InputShape, shape!(C1, H, W), shape!(C2, H, W)> for ()
 where
+    InputShape: TensorShape + 'static,
     [(); C1 * H * W]:,
     [(); C2 * H * W]:,
     [(); (C1 + C2) * H * W]:,

@@ -3,6 +3,7 @@ use crate::ast::{
 };
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
+use std::collections::BTreeMap;
 use syn::{Error, Expr, ExprLit, ExprPath, ExprTuple, Lit, Result, spanned::Spanned};
 
 pub fn generate_network(ast: &NetworkAst) -> Result<TokenStream2> {
@@ -39,6 +40,7 @@ fn split_terminal_heads(steps: &[StepAst]) -> Result<Option<(&[StepAst], &[HeadA
 
 fn lower_pipeline_expr(pipeline: &PipelineAst) -> Result<TokenStream2> {
     let mut current: Option<TokenStream2> = None;
+    let mut saved = BTreeMap::<String, TokenStream2>::new();
 
     for step in &pipeline.steps {
         if let StepAst::Heads { .. } = step {
@@ -48,11 +50,42 @@ fn lower_pipeline_expr(pipeline: &PipelineAst) -> Result<TokenStream2> {
             ));
         }
 
-        let next = lower_step(step)?;
-        current = Some(match current {
-            Some(acc) => quote! { (#acc).then(#next) },
-            None => next,
-        });
+        match step {
+            StepAst::Save { name } => {
+                let snapshot = current
+                    .clone()
+                    .unwrap_or_else(|| quote! { ::tml::identity() });
+                let key = name.to_string();
+                if saved.insert(key.clone(), snapshot).is_some() {
+                    return Err(Error::new(
+                        name.span(),
+                        format!("saved source `{key}` is already defined in this pipeline"),
+                    ));
+                }
+            }
+            StepAst::SumFrom { name } => {
+                let saved_expr = load_saved_source(&saved, name)?;
+                let acc = current
+                    .take()
+                    .unwrap_or_else(|| quote! { ::tml::identity() });
+                current = Some(quote! { ::tml::sum(#acc, #saved_expr) });
+            }
+            StepAst::ConcatFrom { name, axis } => {
+                let saved_expr = load_saved_source(&saved, name)?;
+                let acc = current
+                    .take()
+                    .unwrap_or_else(|| quote! { ::tml::identity() });
+                let axis = axis_tokens(axis)?;
+                current = Some(quote! { ::tml::concat(#axis, #acc, #saved_expr) });
+            }
+            _ => {
+                let next = lower_step(step)?;
+                current = Some(match current {
+                    Some(acc) => quote! { (#acc).then(#next) },
+                    None => next,
+                });
+            }
+        }
     }
 
     Ok(current.unwrap_or_else(|| quote! { ::tml::identity() }))
@@ -65,6 +98,12 @@ fn lower_step(step: &StepAst) -> Result<TokenStream2> {
         StepAst::ReLU => Ok(quote! { ::tml::relu() }),
         StepAst::Sigmoid => Ok(quote! { ::tml::sigmoid() }),
         StepAst::Flatten => Ok(quote! { ::tml::flatten() }),
+        StepAst::Save { .. } | StepAst::SumFrom { .. } | StepAst::ConcatFrom { .. } => {
+            Err(Error::new(
+                Span::call_site(),
+                "internal lowering error: stateful source stages must be handled by the pipeline lowerer",
+            ))
+        }
         StepAst::Ref(expr) => lower_reusable_expr(expr),
         StepAst::Share(expr) => lower_share(expr),
         StepAst::Residual(expr) => {
@@ -240,6 +279,18 @@ fn lower_concat(axis: &syn::Ident, branches: &[PipelineAst]) -> Result<TokenStre
 fn lower_sum(branches: &[PipelineAst]) -> Result<TokenStream2> {
     fold_branches(branches, |left, right| {
         quote! { ::tml::sum(#left, #right) }
+    })
+}
+
+fn load_saved_source(
+    saved: &BTreeMap<String, TokenStream2>,
+    name: &syn::Ident,
+) -> Result<TokenStream2> {
+    saved.get(&name.to_string()).cloned().ok_or_else(|| {
+        Error::new(
+            name.span(),
+            format!("unknown saved source `{}`", name),
+        )
     })
 }
 

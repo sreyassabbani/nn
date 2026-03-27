@@ -127,6 +127,41 @@ fn repeat_accepts_shape_preserving_blocks() {
     assert_eq!(out.len(), 1);
 }
 
+#[test]
+fn saved_sources_can_be_summed_back_into_the_pipeline() {
+    let arch = network! {
+        input(features: 2)
+            -> dense(2)
+            -> relu
+            -> save(skip)
+            -> dense(2)
+            -> sum_from(skip)
+            -> dense(1)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(11));
+    let out = model.predict(&[0.25, -0.5]);
+    assert_eq!(out.len(), 1);
+}
+
+#[test]
+fn saved_sources_can_be_concatenated_back_into_the_pipeline() {
+    let arch = network! {
+        input(channels: 1, height: 8, width: 8)
+            -> conv(2, kernel: 3, pad: 1)
+            -> relu
+            -> save(skip)
+            -> conv(2, kernel: 3, pad: 1)
+            -> concat_from(skip, channels)
+            -> flatten
+            -> dense(3)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(17));
+    let out = model.predict(&[0.5; 64]);
+    assert_eq!(out.len(), 3);
+}
+
 fn user_defined_stem() -> vision::common::Stem<2, 2> {
     vision::common::stem::<2, 2>()
 }

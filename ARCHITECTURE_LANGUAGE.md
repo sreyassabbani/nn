@@ -21,6 +21,23 @@ It should not optimize for:
 - forcing users into a global axis ontology
 - adding second or third parallel API styles
 
+## Current Prototype Status
+
+The current branch prototype has now implemented two important corrections:
+
+1. Reusable fragments live in Rust.
+   - `network!` composes named Rust-defined fragment values and fragment factory calls.
+   - built-in reusable fragments are moving toward named Rust types, not raw `Blueprint<...>` aliases.
+
+2. Long-skip style composition now has a minimal working syntax.
+   - `save(name)` records the current pipeline prefix
+   - `sum_from(name)` merges the saved source back by elementwise sum
+   - `concat_from(name, axis)` merges the saved source back by concat
+
+The current implementation lowers those named-source stages into the existing tree algebra by
+reusing the saved prefix blueprint. That is intentionally a prototype move: it proves the user
+surface and the type rules before a deeper graph runtime exists.
+
 ## Development Philosophy
 
 The development loop for the DSL should be strict and repetitive:

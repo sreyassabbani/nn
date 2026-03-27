@@ -1,0 +1,5 @@
+error: saved source `skip` is already defined in this pipeline
+ --> tests/compile_fail/duplicate_saved_source.rs:8:70
+  |
+8 |         input(features: 2) -> dense(2) -> save(skip) -> relu -> save(skip) -> dense(1)
+  |                                                                      ^^^^
