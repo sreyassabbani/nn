@@ -202,6 +202,85 @@ it is still parsed entirely by `network!`.
 
 The insertion site provides the labels that make those symbols meaningful.
 
+This is plausible, but it has a real ergonomics risk:
+- chunks implicitly depend on ambient label names
+- users may accidentally treat `c`, `y`, and `x` as globally blessed names
+- reuse across differently-labeled architectures is awkward
+
+Because of that, free-symbol chunks should no longer be treated as the leading candidate.
+
+## Candidate DSL: Parameterized Blueprint Chunks
+
+This is now the strongest reusable-chunk candidate.
+
+Example:
+
+```rust
+let stem = network! { |c, y, x|
+    defaults {
+        conv(on: c, over: [y, x]);
+        pool(over: [y, x]);
+    }
+    -> conv(32, kernel: 3, pad: 1)
+    -> relu
+    -> pool(max, kernel: 2, stride: 2)
+};
+
+let arch = network! {
+    input(rgb: 3, row: 32, col: 32)
+    -> stem(rgb, row, col)
+    -> flatten(into: f)
+    -> dense(10)
+};
+```
+
+Why this is stronger than free-symbol chunks:
+- still one syntax family
+- still uses plain Rust `let` for naming
+- no invalid ordinary Rust outside `network!`
+- reusable chunks become label-agnostic
+- users can bind architecture-local names to chunk-local parameters explicitly
+
+Why this is likely feasible:
+- `network!` can parse a leading parameter list such as `|c, y, x|`
+- `network!` can parse `stem(rgb, row, col)` as blueprint application syntax
+- the macro can enforce arity and symbol binding at expansion time
+
+This should become the leading reusable-chunk design target.
+
+## Candidate DSL: Blueprint Application With Defaults
+
+Parameterized chunks become even stronger when paired with defaults:
+
+```rust
+let residual_block = network! { |c, y, x|
+    defaults {
+        conv(on: c, over: [y, x]);
+    }
+    -> residual(
+        network! {
+            conv(64, kernel: 3, pad: 1)
+            -> relu
+            -> conv(64, kernel: 3, pad: 1)
+        }
+    )
+};
+
+let arch = network! {
+    input(ch: 64, h: 56, w: 56)
+    -> residual_block(ch, h, w)
+    -> residual_block(ch, h, w)
+    -> flatten(into: f)
+    -> dense(1000)
+};
+```
+
+This preserves:
+- explicit architectural intent
+- local axis binding
+- reuse without global axis names
+- a single public language
+
 ## Candidate DSL: Built-In Helper Namespaces
 
 The user is right to be strict about namespacing.
@@ -232,6 +311,32 @@ let arch = network! {
 ```
 
 This is feasible if and only if the call is treated as DSL syntax by `network!`, not as a normal Rust call expression.
+
+The stronger version of that rule is:
+
+- user-defined reusable chunks should prefer parameterized `network!` values
+- built-in helpers may use the same application model internally
+- built-in helpers should not introduce a different conceptual path from user-defined chunks
+
+That means built-ins should ideally feel like predeclared parameterized blueprint templates, not like a different subsystem.
+
+Possible direction:
+
+```rust
+let arch = network! {
+    input(c: 3, y: 224, x: 224)
+    -> vision::common::stem(c, y, x; widths: [32, 64])
+    -> vision::common::residual_block(c, y, x; width: 64)
+    -> pool(avg, over: [y, x])
+    -> flatten(into: f)
+    -> dense(1000)
+};
+```
+
+This syntax is intentionally macro-only. The semicolon separates blueprint-axis arguments
+from ordinary helper configuration.
+
+It is not yet chosen, but it is the most promising built-in-helper shape so far.
 
 ## Transform Semantics
 
@@ -430,8 +535,124 @@ let arch = network! {
 };
 ```
 
+### 8. Reusable user-defined conv chunk across different local labels
+
+```rust
+let stem = network! { |c, y, x|
+    defaults {
+        conv(on: c, over: [y, x]);
+    }
+    -> conv(32, kernel: 3, pad: 1)
+    -> relu
+};
+
+let cifar = network! {
+    input(c: 3, y: 32, x: 32)
+    -> stem(c, y, x)
+    -> flatten(into: f)
+    -> dense(10)
+};
+
+let microscope = network! {
+    input(channels: 1, row: 128, col: 128)
+    -> stem(channels, row, col)
+    -> flatten(into: feat)
+    -> dense(2)
+};
+```
+
+### 9. Built-in helper user
+
+```rust
+let arch = network! {
+    input(c: 3, y: 224, x: 224)
+    -> vision::common::stem(c, y, x; widths: [32, 64])
+    -> vision::common::residual_block(c, y, x; width: 64)
+    -> vision::common::residual_block(c, y, x; width: 64)
+    -> pool(avg, over: [y, x])
+    -> flatten(into: f)
+    -> dense(1000)
+};
+```
+
 These examples are the design test suite. If the DSL cannot support them cleanly,
 the DSL is not done.
+
+## Prototype Comparison
+
+### Option A: Free-symbol chunks
+
+Example:
+
+```rust
+let stem = network! {
+    defaults {
+        conv(on: c, over: [y, x]);
+    }
+    -> conv(32, kernel: 3, pad: 1)
+    -> relu
+};
+```
+
+Pros:
+- very terse
+- no new application syntax
+
+Cons:
+- ambient-name coupling
+- weak reuse across differently-labeled architectures
+- risks creating accidental house names that feel mandatory
+
+Current judgment:
+- acceptable as an implementation stepping stone
+- not the best long-term public idiom
+
+### Option B: Parameterized chunks
+
+Example:
+
+```rust
+let stem = network! { |c, y, x|
+    defaults {
+        conv(on: c, over: [y, x]);
+    }
+    -> conv(32, kernel: 3, pad: 1)
+    -> relu
+};
+```
+
+Pros:
+- explicit binding
+- reusable across arbitrary local names
+- still one syntax family
+- avoids invalid non-Rust helper syntax outside `network!`
+
+Cons:
+- adds application syntax and parser complexity
+
+Current judgment:
+- strongest overall candidate
+
+### Option C: Built-in helper intrinsics only
+
+Example:
+
+```rust
+network! {
+    input(c: 3, y: 224, x: 224)
+    -> vision::common::stem(c, y, x; widths: [32, 64])
+}
+```
+
+Pros:
+- very ergonomic for common patterns
+
+Cons:
+- not enough on its own
+- risks creating "special library magic" that users cannot emulate
+
+Current judgment:
+- good only if it is built on the same parameterized blueprint model as user-defined chunks
 
 ## Strict Idioms and Best Practices
 
@@ -479,9 +700,12 @@ These are not mandatory globally, but they should likely be the house style in d
 Prefer:
 - `vision::common::stem(...)`
 - `vision::common::residual_block(...)`
+- `vision::resnet::basic_block(...)`
+- `vision::resnet::bottleneck(...)`
 
 Avoid:
 - flat `vision::stem(...)` if the namespace is likely to grow crowded
+- ad hoc root-level helper names that are hard to organize later
 
 ### 7. Do not expose ontology-like axis names as the main story
 
@@ -492,10 +716,11 @@ The DSL should not teach users that they must think in terms of an approved set 
 The following still need prototyping before implementation decisions are locked:
 
 1. Whether free axis symbols in reusable blueprint chunks are ergonomically understandable.
-2. Whether `defaults { ... }` should be block-scoped or whole-pipeline scoped.
-3. Whether built-in helper invocations inside `network!` are worth the parser complexity.
-4. Whether labels should preserve identity across `conv`, or whether explicit renaming becomes necessary sooner.
-5. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
+2. Whether parameterized chunks should supersede free-symbol chunks entirely in the public docs.
+3. Whether `defaults { ... }` should be block-scoped or whole-pipeline scoped.
+4. Whether built-in helper invocations inside `network!` are worth the parser complexity.
+5. Whether labels should preserve identity across `conv`, or whether explicit renaming becomes necessary sooner.
+6. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
 
 ## Current Lean
 
@@ -504,8 +729,10 @@ The strongest current design stance is:
 - axis labels are open-ended DSL symbols
 - transforms explicitly say which labels they act on
 - scoped defaults remove repetition
-- reusable chunks can contain free axis symbols
+- parameterized reusable chunks are the strongest reuse model
+- free-symbol chunks are acceptable only as a possible shorthand, not as the leading idiom
 - built-in helper namespaces are acceptable, but only inside `network!`
+- built-in helpers should conceptually be predeclared parameterized blueprint templates
 - no public semantic axis taxonomy unless a real implementation pressure makes it unavoidable
 
 This is the version of the DSL that should be pressure-tested next, not the older fixed-role axis model.
