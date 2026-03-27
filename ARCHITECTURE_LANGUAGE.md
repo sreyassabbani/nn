@@ -53,23 +53,43 @@ If the DSL ever stops passing those tests, it should be narrowed or replaced.
 
 These are the current important boundaries imposed by Rust and by the chosen DSL model.
 
-### 1. Axis labels inside `network!` are DSL symbols, not ordinary Rust values
+### 1. Reusable interfaces should live in Rust, not inside `network!`
 
-This means code like this is **not** valid ordinary Rust:
+The current prototype direction is:
+
+- Rust owns reusable fragment definitions and contracts
+- `network!` owns composition and local graph notation
+- the core owns shape and extent checking
+
+That means the macro should accept references to ordinary Rust-defined fragment values and
+fragment factory calls, but it should **not** try to become its own interface-definition language.
+
+The currently working prototype surface is:
 
 ```rust
-let stem = vision::common::stem(on: c, over: [y, x], widths: [32, 64]);
+let stem = vision::common::stem::<32, 64>();
+
+let arch = network! {
+    input(channels: 3, height: 32, width: 32) -> stem -> flatten -> dense(10)
+};
 ```
 
-unless `c`, `y`, and `x` are actual Rust values, which they are not in the current design.
+and:
 
-Therefore, axis-parameterized helpers are only feasible in one of these forms:
+```rust
+let arch = network! {
+    input(channels: 3, height: 32, width: 32)
+        -> vision::common::stem::<32, 64>()
+        -> flatten
+        -> dense(10)
+};
+```
 
-- inside `network!`, where the macro parses the helper call as DSL syntax
-- as `network!` blueprint chunks that contain free axis symbols to be resolved later
-- as ordinary Rust helpers that do **not** take axis labels and instead rely on surrounding DSL defaults
+The current stage-reference grammar inside `network!` should therefore stay deliberately small:
+- bare paths
+- path calls
 
-The first two are the most plausible.
+not arbitrary Rust expressions.
 
 ### 2. Dependent typing is not available
 
@@ -101,13 +121,14 @@ The public DSL should move toward:
 - open-ended axis labels
 - explicit per-transform axis operands
 - scoped defaults to remove repetition
-- reusable blueprints with free axis symbols
-- namespaced built-in blueprint helpers that are only meaningful **inside** `network!`
+- named Rust-defined fragments referenced from `network!`
+- namespaced built-in fragment helpers exposed as ordinary Rust APIs
 
 The public API should not require:
 - suffix tags like `height[spatial]`
 - a fixed global set of semantic axis roles
 - multiple public construction styles
+- a second interface-definition language inside the macro
 
 ## Canonical Axis Model
 
@@ -183,41 +204,44 @@ Why this is strong:
 
 This should become a first-class design target.
 
-## Candidate DSL: Reusable Blueprint Chunks
+## Candidate DSL: Rust-defined Fragments
 
-Reusable chunks should remain plain Rust bindings around `network!`.
+Reusable fragments should be ordinary Rust values or factory functions.
 
-The crucial idea is that a chunk may contain free axis symbols:
+The macro should compose them, not define them:
 
 ```rust
-let stem = network! {
-    defaults {
-        conv(on: c, over: [y, x]);
-        pool(over: [y, x]);
-    }
-    -> conv(32, kernel: 3, pad: 1)
-    -> relu
-    -> pool(max, kernel: 2, stride: 2)
-};
+let stem = vision::common::stem::<32, 64>();
 
 let arch = network! {
-    input(c: 3, y: 32, x: 32)
+    input(channels: 3, height: 32, width: 32)
     -> stem
     -> stem
-    -> flatten(into: f)
+    -> flatten
     -> dense(10)
 };
 ```
 
-This is plausible because the chunk is not ordinary Rust code using `c`, `y`, and `x`;
-it is still parsed entirely by `network!`.
+This is the cleaner abstraction split:
+- Rust names and packages fragments
+- `network!` wires them together
+- typed shape validation still happens at the rooted blueprint/core layer
 
-The insertion site provides the labels that make those symbols meaningful.
+### Prototype finding: concrete blueprint types currently work better than opaque `impl Fragment`
 
-This is plausible, but it has a real ergonomics risk:
-- chunks implicitly depend on ambient label names
-- users may accidentally treat `c`, `y`, and `x` as globally blessed names
-- reuse across differently-labeled architectures is awkward
+The prototype currently supports:
+- named fragment values
+- direct fragment factory calls
+- sharing named fragment values with `share(name)`
+
+The prototype currently does **not** cleanly support:
+- arbitrary `impl Fragment` opaque return types flowing through rooted typed validation
+
+So the current practical idiom is:
+- return concrete `Blueprint<Spec>` values from reusable fragment factories
+- or bind fragment values before inserting them into `network!`
+
+This is an important real constraint from Rust's type system, not just a style preference.
 
 Because of that, free-symbol chunks should no longer be treated as the leading candidate.
 

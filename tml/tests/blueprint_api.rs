@@ -1,7 +1,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use tml::{Float, InitConfig, network};
+use tml::{Float, FragmentExt, InitConfig, network, vision};
 
 fn assert_close<const N: usize>(left: [Float; N], right: [Float; N]) {
     for (lhs, rhs) in left.into_iter().zip(right) {
@@ -125,4 +125,73 @@ fn repeat_accepts_shape_preserving_blocks() {
     let model = arch.materialize(InitConfig::new().seed(3));
     let out = model.predict(&[1.0, -2.0]);
     assert_eq!(out.len(), 1);
+}
+
+fn user_defined_stem() -> tml::Blueprint<vision::common::StemSpec<2, 2>> {
+    vision::common::stem::<2, 2>()
+}
+
+#[test]
+fn rust_defined_fragment_values_compose_inside_network_macro() {
+    let tower = vision::common::stem::<2, 2>().then_fragment(vision::common::residual_block::<2>());
+
+    let arch = network! {
+        input(channels: 2, height: 8, width: 8) -> tower -> flatten -> dense(4)
+    };
+
+    let summary = arch.summary();
+    assert!(summary.contains("conv(2, kernel: 3, stride: 1, pad: 1)"));
+    assert!(summary.contains("residual"));
+
+    let model = arch.materialize(InitConfig::new().seed(13));
+    let out = model.predict(&[0.5; 128]);
+    assert_eq!(out.len(), 4);
+}
+
+#[test]
+fn named_rust_defined_fragments_can_be_shared_by_the_macro() {
+    let block = vision::common::residual_block::<2>();
+
+    let unshared = network! {
+        input(channels: 2, height: 8, width: 8) -> block -> block -> flatten -> dense(1)
+    };
+    let shared = network! {
+        input(channels: 2, height: 8, width: 8) -> share(block) -> share(block) -> flatten -> dense(1)
+    };
+
+    assert!(shared.parameter_count() < unshared.parameter_count());
+}
+
+#[test]
+fn user_defined_fragment_values_can_be_bound_without_the_macro() {
+    let stem = user_defined_stem();
+    let arch = network! {
+        input(channels: 2, height: 8, width: 8) -> stem -> flatten -> dense(2)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(23));
+    let out = model.predict(&[1.0; 128]);
+    assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn rust_defined_fragment_factories_can_be_called_inside_network_macro() {
+    let arch = network! {
+        input(channels: 2, height: 8, width: 8) -> user_defined_stem() -> flatten -> dense(2)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(31));
+    let out = model.predict(&[0.25; 128]);
+    assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn built_in_fragment_factories_can_be_called_inside_network_macro() {
+    let arch = network! {
+        input(channels: 2, height: 8, width: 8) -> vision::common::stem::<2, 2>() -> flatten -> dense(2)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(37));
+    let out = model.predict(&[0.75; 128]);
+    assert_eq!(out.len(), 2);
 }

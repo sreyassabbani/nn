@@ -94,13 +94,15 @@ mod tensor;
 
 pub mod conv;
 pub mod data;
+pub mod vision;
 
 pub use autodiff::{EvalTape, ExprGraph, Gradients, NodeId, Op, ReverseTape, Tape, TapeError, Var};
 pub use blueprint::{
-    Axis, Blueprint, BlueprintSpec, GraphRuntime, HeadsSpec, InitConfig, MaterializeContext, Model,
-    PredictRuntime, TrainRuntime, TransformSpec, concat, conv, dense, dense_no_bias,
-    features_input, flatten, identity, image_input, relu, repeat_stage, residual, root, share,
-    sigmoid, sum, validate_blueprint, validate_headed_blueprint, volume_input,
+    Axis, Blueprint, BlueprintSpec, Fragment, FragmentExt, GraphRuntime, HeadsSpec, InitConfig,
+    MaterializeContext, Model, PredictRuntime, TrainRuntime, TransformSpec, concat, conv, dense,
+    dense_no_bias, features_input, flatten, identity, image_input, into_blueprint, relu,
+    repeat_stage, residual, root, share, share_fragment, sigmoid, sum, validate_blueprint,
+    validate_headed_blueprint, volume_input,
 };
 pub use data::Sample;
 pub use network::{

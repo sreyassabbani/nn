@@ -157,7 +157,7 @@ fn lower_reusable_expr(expr: &Expr) -> Result<TokenStream2> {
                 expr.span(),
                 "-> output has been removed; the final stage is already the output",
             )),
-            _ => Ok(quote! { (#expr).clone() }),
+            _ => Ok(quote! { ::tml::into_blueprint((#expr).clone()) }),
         };
     }
 
@@ -174,11 +174,11 @@ fn lower_reusable_expr(expr: &Expr) -> Result<TokenStream2> {
                 expr.span(),
                 "-> output has been removed; the final stage is already the output",
             )),
-            _ => Ok(quote! { (#expr).clone() }),
+            _ => Ok(quote! { ::tml::into_blueprint((#expr).clone()) }),
         };
     }
 
-    Ok(quote! { (#expr).clone() })
+    Ok(quote! { ::tml::into_blueprint((#expr).clone()) })
 }
 
 fn lower_share(expr: &Expr) -> Result<TokenStream2> {
@@ -189,11 +189,11 @@ fn lower_share_expr(expr: &Expr) -> Result<TokenStream2> {
     if !matches!(expr, Expr::Path(_)) {
         return Err(Error::new(
             expr.span(),
-            "share(...) only accepts a previously bound blueprint identifier in this redesign",
+            "share(...) only accepts a previously bound fragment identifier in this redesign",
         ));
     }
 
-    Ok(quote! { ::tml::share(&#expr) })
+    Ok(quote! { ::tml::share_fragment(&#expr) })
 }
 
 fn lower_repeat(times: &syn::LitInt, body: &Expr) -> Result<TokenStream2> {

@@ -2,7 +2,8 @@ use crate::ast::{
     ConvSpec, DenseSpec, HeadAst, InputSpec, KernelSpec, NetworkAst, PipelineAst, StepAst,
 };
 use syn::parse::{Parse, ParseBuffer, ParseStream};
-use syn::{Expr, ExprPath, Ident, LitBool, LitInt, Result, Token, parenthesized};
+use syn::punctuated::Punctuated;
+use syn::{Expr, ExprCall, ExprPath, Ident, LitBool, LitInt, Path, Result, Token, parenthesized};
 
 impl Parse for NetworkAst {
     fn parse(input: ParseStream) -> Result<Self> {
@@ -324,16 +325,26 @@ fn parse_expr_list(content: &ParseBuffer<'_>) -> Result<Vec<Expr>> {
 }
 
 fn parse_reusable_expr(input: ParseStream) -> Result<Expr> {
-    if input.peek(Ident) && !input.peek2(Token![!]) {
-        let path = input.parse::<syn::Path>()?;
-        return Ok(Expr::Path(ExprPath {
+    let path: Path = input.parse()?;
+    let mut expr = Expr::Path(ExprPath {
+        attrs: Vec::new(),
+        qself: None,
+        path,
+    });
+
+    while input.peek(syn::token::Paren) {
+        let content;
+        let paren_token = parenthesized!(content in input);
+        let args = Punctuated::<Expr, Token![,]>::parse_terminated(&content)?;
+        expr = Expr::Call(ExprCall {
             attrs: Vec::new(),
-            qself: None,
-            path,
-        }));
+            func: Box::new(expr),
+            paren_token,
+            args,
+        });
     }
 
-    input.parse()
+    Ok(expr)
 }
 
 fn peek_ident(input: ParseStream, expected: &str) -> bool {

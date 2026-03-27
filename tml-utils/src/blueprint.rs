@@ -3,9 +3,11 @@ use crate::shape::TensorShape;
 use crate::{Float, Sample};
 use std::{collections::HashSet, fmt, marker::PhantomData};
 
+mod fragments;
 mod runtime;
 mod transforms;
 
+pub use fragments::{Fragment, FragmentExt, into_blueprint, share_fragment};
 pub use runtime::{GraphRuntime, MaterializeContext};
 #[allow(unused_imports)]
 pub use transforms::{
