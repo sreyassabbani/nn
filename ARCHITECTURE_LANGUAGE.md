@@ -553,9 +553,34 @@ This also keeps semantics open-ended:
 - `plane` is not a magical ontology word
 - users could name the slot `domain`, `grid`, `window`, `spectrogram`, etc.
 
+Structured slots should also be allowed to have one member when a grouped interface name still matters.
+
+Example:
+
+```rust
+let block = network! {
+    takes(seq { tok }, feat)
+    -> attend(on: feat, over: seq, heads: 12)
+};
+```
+
+This is useful because:
+- it keeps the interface consistently slot-oriented
+- `over: seq` reads better than always spelling `[tok]`
+- it avoids creating a separate “special case” idiom for one-axis logical groups
+
 Current judgment:
 - structured slots are now a stronger candidate than plain axis-list slots
 - the current `params(ch: c, spatial: [y, x])` form should be treated as a stepping stone, not a settled answer
+
+One more correction:
+
+- `params` is probably not the right final keyword for these interfaces
+
+These are not runtime parameters.
+They are shape/axis requirements.
+
+That naming should likely change.
 
 ## Dimension Safety Is A Separate Problem
 
@@ -792,29 +817,259 @@ The DSL now looks like it needs multiple distinct layers of safety:
 
 If `tml` wants to earn “typed machine learning,” it needs a credible story for all seven layers.
 
+## Adversarial Stress Tests For Structured Slots And Sources
+
+Structured slots are better than list slots, but they still need pressure.
+
+### 1. Partial member binding
+
+This should be rejected:
+
+```rust
+let arch = network! {
+    input(c: 64, y: 56, x: 56)
+    -> stem(ch: c, plane: { row: y })
+};
+```
+
+because `plane.col` was never bound.
+
+### 2. Duplicate member binding
+
+This should also be rejected:
+
+```rust
+let arch = network! {
+    input(c: 64, y: 56, x: 56)
+    -> stem(ch: c, plane: { row: y, col: y })
+};
+```
+
+unless aliasing is made explicitly legal, which it probably should not be by default.
+
+### 3. Cross-slot aliasing
+
+This should be rejected:
+
+```rust
+let block = network! {
+    params(left { row, col }, right { row2, col2 })
+    -> concat(row) {
+        from(left),
+        from(right),
+    }
+};
+
+let arch = network! {
+    input(y: 56, x: 56)
+    -> block(
+        left: { row: y, col: x },
+        right: { row2: y, col2: x },
+    )
+};
+```
+
+if `left` and `right` are intended to be distinct sources rather than two names for the same one.
+
+Current judgment:
+- aliasing across interface slots should be rejected by default
+- if sharing/aliasing is ever allowed, it should use explicit syntax
+
+### 4. Member-order drift after permutation
+
+This should have a precise answer:
+
+```rust
+let block = network! {
+    params(ch, plane { row, col })
+    -> permute([ch, plane.col, plane.row])
+    -> conv(64, on: ch, over: plane, kernel: [3, 5], pad: [1, 2])
+};
+```
+
+Two possible semantics exist:
+- `over: plane` uses declared member order: `row`, then `col`
+- `over: plane` uses current tensor layout order after permutation
+
+Current judgment:
+- structured slots should preserve declared semantic order
+- transforms like `conv(..., over: plane)` should use that order
+- raw layout permutation should not silently mutate slot member meaning
+
+### 5. Saved-source restoration
+
+This should probably require explicit restoration before reuse:
+
+```rust
+network! {
+    input(c: 32, y: 56, x: 56)
+    -> save(enc)
+    -> downsample(over: [y, x], factor: 2)
+    -> from(enc)
+    -> concat(c) {
+        current,
+        from(enc),
+    }
+}
+```
+
+The language needs a clear rule for whether:
+- `from(enc)` resets the current source
+- or `from(enc)` only creates a branchable secondary source
+
+Current judgment:
+- saved sources and the current pipeline source should be explicitly distinguished
+- `current` and `from(name)` should not be underspecified shortcuts
+
+### 6. Multi-input source typing
+
+The multi-input story should not be “just more names.”
+
+Each named input should carry:
+- a full symbolic labeled shape
+- its own source identity
+- its own interface surface for later branching/fusion
+
+That suggests a stronger model:
+- inputs are first-class named sources
+- saved activations are also named sources
+- graph combinators consume and produce named sources under exact shape contracts
+
+This is stronger than treating multi-input as just syntax sugar over `save`.
+
+## Limited Constraint Clauses May Be Necessary
+
+Slots and symbolic extents still may not be enough for every useful contract.
+
+Some chunks likely need to express small equality constraints explicitly.
+
+Example:
+
+```rust
+let fuse = network! {
+    takes(left { tok, feat }, right { tok2, feat2 })
+    require {
+        feat == feat2;
+    }
+    -> concat(tok) {
+        from(left),
+        from(right),
+    }
+};
+```
+
+This is not full dependent typing.
+It is a deliberately tiny constraint language.
+
+The only thing it may need at first is:
+- symbolic extent equality
+- perhaps equality between whole slots/shapes later
+
+Why this matters:
+- some safety facts are not local to one transform
+- some are properties of how chunk interfaces relate internally
+
+Current judgment:
+- a tiny `require { ... }` equality language may be worth the complexity
+- it should stay deliberately small
+- no arithmetic solver should be assumed as the default path
+
+## Reconsidering The Interface Header Keyword
+
+`params(...)` is likely the wrong word.
+
+These interfaces describe what a chunk **takes** from the current labeled shape,
+not runtime values or generic parameters.
+
+### Candidate A: `params(...)`
+
+```rust
+params(ch, plane { row, col })
+```
+
+Pros:
+- already used in the current design notes
+- familiar in a broad sense
+
+Cons:
+- strongly suggests runtime values
+- weakly suggests a function-call mental model
+- understates that this is really a shape interface
+
+Current judgment:
+- workable as a placeholder
+- likely wrong as the final term
+
+### Candidate B: `takes(...)`
+
+```rust
+takes(ch, plane { row, col })
+```
+
+Pros:
+- reads like a real interface contract
+- clearly not ordinary Rust parameter syntax
+- feels closer to “this chunk requires these labeled shape slots”
+
+Cons:
+- slightly more language-like
+
+Current judgment:
+- strongest current header keyword
+
+### Candidate C: `slots(...)`
+
+```rust
+slots(ch, plane { row, col })
+```
+
+Pros:
+- explicit about structure
+
+Cons:
+- too internal sounding
+- weak ergonomics in examples
+
+Current judgment:
+- less good than `takes(...)`
+
+### Candidate D: `shape(...)`
+
+```rust
+shape(ch, plane { row, col })
+```
+
+Pros:
+- points toward structural meaning
+
+Cons:
+- clashes conceptually with tensor-level shape notation
+- too broad and ambiguous
+
+Current judgment:
+- likely worse than `takes(...)`
+
 ## Candidate DSL: Blueprint Application With Defaults
 
 Parameterized chunks become even stronger when paired with defaults:
 
 ```rust
 let residual_block = network! {
-    params(c, y, x)
+    takes(ch, plane { row, col })
     defaults {
-        conv(on: c, over: [y, x]);
+        conv(on: ch, over: plane);
     }
-    -> residual(
-        network! {
-            conv(64, kernel: 3, pad: 1)
-            -> relu
-            -> conv(64, kernel: 3, pad: 1)
-        }
-    )
+    -> residual {
+        conv(64, kernel: 3, pad: 1)
+        -> relu
+        -> conv(64, kernel: 3, pad: 1)
+    }
 };
 
 let arch = network! {
-    input(ch: 64, h: 56, w: 56)
-    -> residual_block(c: ch, y: h, x: w)
-    -> residual_block(c: ch, y: h, x: w)
+    input(ch: 64, row: 56, col: 56)
+    -> residual_block(ch: ch, plane: { row: row, col: col })
+    -> residual_block(ch: ch, plane: { row: row, col: col })
     -> flatten(into: f)
     -> dense(1000)
 };
@@ -847,8 +1102,8 @@ Example candidate:
 ```rust
 let arch = network! {
     input(c: 3, y: 224, x: 224)
-    -> vision::common::stem(on: c, over: [y, x], widths: [32, 64])
-    -> vision::common::residual_block(on: c, over: [y, x], width: 64)
+    -> vision::common::stem(ch: c, plane: { row: y, col: x }, widths: [32, 64])
+    -> vision::common::residual_block(ch: c, plane: { row: y, col: x }, width: 64)
     -> pool(avg, over: [y, x])
     -> flatten(into: f)
     -> dense(1000)
@@ -870,8 +1125,8 @@ Possible direction:
 ```rust
 let arch = network! {
     input(c: 3, y: 224, x: 224)
-    -> vision::common::stem(ch: c, spatial: [y, x], widths: [32, 64])
-    -> vision::common::residual_block(ch: c, spatial: [y, x], width: 64)
+    -> vision::common::stem(ch: c, plane: { row: y, col: x }, widths: [32, 64])
+    -> vision::common::residual_block(ch: c, plane: { row: y, col: x }, width: 64)
     -> pool(avg, over: [y, x])
     -> flatten(into: f)
     -> dense(1000)
@@ -969,7 +1224,7 @@ Cons:
 - slightly more verbose
 
 Current judgment:
-- strongest declaration form
+- workable, but no longer the strongest declaration form
 
 #### Candidate C: interface-oriented `params(...)` header
 
@@ -992,8 +1247,31 @@ Cons:
 - slightly more verbose
 
 Current judgment:
-- strongest overall declaration form
-- should likely replace raw `params(c, y, x)` as the primary idiom
+- stronger than raw `params(c, y, x)`
+- still likely only an intermediate step
+
+#### Candidate D: structured `takes(...)` header
+
+```rust
+network! {
+    takes(ch, plane { row, col })
+    ...
+}
+```
+
+Pros:
+- names the interface as a requirement, not a runtime parameter list
+- aligns with structured slots naturally
+- best matches the “typed architecture language” direction
+- makes later `require { ... }` clauses feel coherent
+
+Cons:
+- most DSL-specific option
+- would require rewriting earlier design examples
+
+Current judgment:
+- strongest overall declaration form now
+- likely better than any `params(...)` variant if the DSL keeps moving in this direction
 
 ### Application syntax candidates
 
@@ -1070,7 +1348,7 @@ Current judgment:
 
 The strongest combination right now is:
 
-- declare reusable chunks with interface-oriented `params(...)`
+- declare reusable chunks with structured `takes(...)`
 - document interface-slot application as the main form
 - optionally support shorthand positional-or-elided application only as sugar
 
@@ -1078,9 +1356,9 @@ Examples:
 
 ```rust
 let stem = network! {
-    params(ch: c, spatial: [y, x])
+    takes(ch, plane { row, col })
     defaults {
-        conv(on: c, over: [y, x]);
+        conv(on: ch, over: plane);
     }
     -> conv(32, kernel: 3, pad: 1)
     -> relu
@@ -1088,14 +1366,14 @@ let stem = network! {
 
 let cifar = network! {
     input(c: 3, y: 32, x: 32)
-    -> stem(ch: c, spatial: [y, x])
+    -> stem(ch: c, plane: { row: y, col: x })
     -> flatten(into: f)
     -> dense(10)
 };
 
 let microscope = network! {
     input(channels: 1, row: 128, col: 128)
-    -> stem(ch: channels, spatial: [row, col])
+    -> stem(ch: channels, plane: { row: row, col: col })
     -> flatten(into: feat)
     -> dense(2)
 };
@@ -1272,16 +1550,16 @@ Candidate direction:
 
 ```rust
 let block = network! {
-    params(seq: [tok], feat: f)
+    takes(seq { tok }, feat)
     -> residual {
-        norm(rms, over: [f])
-        -> attend(on: f, over: [tok], heads: 12)
+        norm(rms, over: [feat])
+        -> attend(on: feat, over: seq, heads: 12)
     }
     -> residual {
-        norm(rms, over: [f])
-        -> linear(on: f, out: 3072)
+        norm(rms, over: [feat])
+        -> linear(on: feat, out: 3072)
         -> gelu
-        -> linear(on: f, out: 768)
+        -> linear(on: feat, out: 768)
     }
 };
 ```
@@ -1592,9 +1870,9 @@ let block = network! {
 };
 
 let arch = network! {
-    input(tok: 512, f: 768)
-    -> block(seq: [tok], feat: f)
-    -> block(seq: [tok], feat: f)
+    input(tok: 512, feat: 768)
+    -> block(seq: { tok: tok }, feat: feat)
+    -> block(seq: { tok: tok }, feat: feat)
     -> reduce(mean, over: [tok])
     -> dense(2)
 };
@@ -1788,18 +2066,18 @@ This keeps transform meaning local and avoids hidden ontology.
 
 This should become the idiomatic way to remove repetition.
 
-### 5. Prefer explicit structured interfaces for reusable chunks
+### 5. Prefer structured `takes(...)` interfaces for reusable chunks
 
 Prefer:
 
 ```rust
 let stem = network! {
-    params(ch, plane { row, col })
+    takes(ch, plane { row, col })
     ...
 };
 ```
 
-Avoid using closure-like pipe syntax, raw unnamed parameter lists, or ontology-heavy slot names as the leading documented pattern.
+Avoid using closure-like pipe syntax, raw unnamed parameter lists, `params(...)` as the final public term, or ontology-heavy slot names as the leading documented pattern.
 
 ### 6. Prefer interface-slot application
 
@@ -1895,7 +2173,7 @@ not a second architecture subsystem.
 
 ### 13. Reusable chunks must have explicit interfaces
 
-`params(...)` is not optional decoration.
+`takes(...)` / structured chunk interfaces are not optional decoration.
 
 It is the chunk interface and should be documented that way.
 
@@ -1919,15 +2197,17 @@ The following still need prototyping before implementation decisions are locked:
 3. Whether `defaults { ... }` should be block-scoped or whole-pipeline scoped.
 4. Whether built-in helper invocations inside `network!` are worth the parser complexity.
 5. Whether `linear(on: axis, out: N)` should become the general primitive, with `dense(N)` demoted to sugar.
-6. Whether structured slot parameters should replace plain axis-list slots as the primary chunk interface model.
-7. Whether chunk application should reject overlapping actual-axis bindings by default.
-8. How symbolic extent variables should be represented in the DSL/core boundary.
-9. Whether structured slots should preserve canonical member order or only named membership.
-10. Whether labels should preserve identity across `conv` and `linear`, or whether explicit renaming becomes necessary sooner.
-11. What the first activation-reference syntax should be for long-skip DAGs.
-12. Whether inputs and saved activations should be unified as named sources under one reference model.
-13. What the first multi-input syntax should be.
-14. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
+6. Whether `takes(...)` should fully replace `params(...)` in the public DSL.
+7. Whether structured slot parameters should replace plain axis-list slots as the primary chunk interface model.
+8. Whether chunk application should reject overlapping actual-axis bindings by default.
+9. How symbolic extent variables should be represented in the DSL/core boundary.
+10. Whether a limited `require { ... }` equality language is worth the complexity.
+11. Whether structured slots should preserve canonical member order or only named membership.
+12. Whether labels should preserve identity across `conv` and `linear`, or whether explicit renaming becomes necessary sooner.
+13. What the first activation-reference syntax should be for long-skip DAGs.
+14. Whether inputs and saved activations should be unified as named sources under one reference model.
+15. What the first multi-input syntax should be.
+16. Whether `flatten(into: f)` should be mandatory or whether plain `flatten` should default to `f`/`features`.
 
 ## Current Lean
 
@@ -1938,11 +2218,14 @@ The strongest current design stance is:
 - scoped defaults remove repetition
 - parameterized reusable chunks are still the strongest reuse model
 - free-symbol chunks are acceptable only as a possible shorthand, not as the leading idiom
+- `takes(...)` is probably a better public keyword than `params(...)`
 - structured chunk interfaces may be stronger than plain axis-list slot binding
-- `params(...)` should be treated as a real interface/signature, not decoration
+- structured chunk interfaces should be treated as real contracts, not decoration
+- structured slots should also allow one-member groups when grouped semantics matter
 - named chunk application is the strongest primary application form
 - overlapping actual-axis bindings should probably be rejected by default
 - axis/interface safety alone is not enough; symbolic extent rewriting is required for real shape safety
+- a tiny `require { ... }` equality layer may be necessary for serious interface contracts
 - saved sources and inputs should probably share one exact symbolic-shape reference model
 - the DSL likely needs a general `linear(on: ..., out: ...)` primitive
 - inline combinator blocks are likely cleaner than nested `network!` for local structure
