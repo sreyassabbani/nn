@@ -1,3 +1,10 @@
+//! Type-level tensor shapes.
+//!
+//! `tml` currently represents shapes as compile-time linked lists built from
+//! [`crate::shape::Dim`] and [`crate::shape::Nil`]. That design keeps extents
+//! in the type system while also allowing small amounts of runtime reflection
+//! such as [`TensorShape::dims`] and [`TensorShape::axis_names`].
+
 use std::marker::PhantomData;
 
 mod sealed {
@@ -16,7 +23,7 @@ pub struct Nil;
 /// [`Dim`] is a single cons-cell in the shape list:
 /// - `N` is the length of the current axis
 /// - `Rest` is the remainder of the shape
-/// - `NAME` is the optional axis label preserved from [`shape!`]
+/// - `NAME` is the optional axis label preserved from `shape!`
 ///
 /// The core idea is: in current `tml`, a shape is not a runtime object. It is
 /// a type-level linked list of dimensions.
@@ -46,13 +53,18 @@ impl<const N: usize, Rest, const NAME: &'static str> sealed::Sealed for Dim<N, R
 /// - [`TensorShape::RANK`] is the number of axes
 /// - [`TensorShape::offset`] computes a row-major flat index
 /// - [`TensorShape::dims`] returns the extents at runtime
-/// - [`TensorShape::axis_names`] returns any labels preserved by [`shape!`]
+/// - [`TensorShape::axis_names`] returns any labels preserved by `shape!`
 pub trait TensorShape: sealed::Sealed {
+    /// The total number of elements in the shape.
     const SIZE: usize;
+    /// The number of axes in the shape.
     const RANK: usize;
 
+    /// Computes the row-major flat offset for one full-rank index.
     fn offset(index: &[usize]) -> usize;
+    /// Returns the runtime axis extents in order.
     fn dims() -> Vec<usize>;
+    /// Returns any axis labels preserved by `shape!`.
     fn axis_names() -> Vec<Option<&'static str>>;
 }
 
