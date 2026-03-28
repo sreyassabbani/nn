@@ -606,20 +606,18 @@ fn wrap_root(input: &InputSpec, body: TokenStream2) -> TokenStream2 {
 
 fn input_shape_ty(input: &InputSpec) -> TokenStream2 {
     match input {
-        InputSpec::Features { features } => quote! { ::tml::shape!(features: #features) },
+        InputSpec::Features { features } => quote! { ::tml::shape!(#features) },
         InputSpec::Image {
             channels,
             height,
             width,
-        } => quote! { ::tml::shape!(channels: #channels, height: #height, width: #width) },
+        } => quote! { ::tml::shape!(#channels, #height, #width) },
         InputSpec::Volume {
             channels,
             depth,
             height,
             width,
-        } => {
-            quote! { ::tml::shape!(channels: #channels, depth: #depth, height: #height, width: #width) }
-        }
+        } => quote! { ::tml::shape!(#channels, #depth, #height, #width) },
     }
 }
 

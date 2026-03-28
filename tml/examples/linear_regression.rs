@@ -1,3 +1,6 @@
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs, adt_const_params, unsized_const_params)]
+
 use tml::{Float, InitConfig, Sample, TrainConfig, network};
 
 // y = 3x + 2

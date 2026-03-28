@@ -1,5 +1,5 @@
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
+#![feature(generic_const_exprs, adt_const_params, unsized_const_params)]
 
 use tml::{Tensor, TensorMut, TensorRef, shape, tensor};
 

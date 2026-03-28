@@ -20,6 +20,11 @@ pub use transforms::{
 use runtime::GraphRunner;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Built-in axis names currently used by rooted blueprints and summaries.
+///
+/// This enum belongs to the blueprint/input side of the library, not the core
+/// tensor shape encoding. The tensor shape layer now preserves raw `shape!`
+/// labels separately.
 pub enum Axis {
     Features,
     Channels,
@@ -43,6 +48,10 @@ impl Axis {
 }
 
 #[derive(Debug, Clone)]
+/// Configuration used when materializing a [`Blueprint`] into model state.
+///
+/// A [`Blueprint`] is an architecture description; [`InitConfig`] controls how
+/// that description becomes a concrete trainable model.
 pub struct InitConfig {
     seed: Option<u64>,
 }
@@ -65,6 +74,12 @@ impl Default for InitConfig {
 }
 
 #[derive(Debug, Clone)]
+/// A reusable architecture description.
+///
+/// [`Blueprint`] is the high-level "architecture as data" type in `tml`. It
+/// holds a specification value, but it does not contain initialized parameter
+/// state. To produce a trainable model, materialize a rooted blueprint with
+/// [`Blueprint::materialize`].
 pub struct Blueprint<Spec> {
     spec: Spec,
 }
@@ -134,6 +149,7 @@ impl<const INPUT: usize, const OUTPUT: usize> fmt::Debug for Model<INPUT, OUTPUT
 }
 
 #[derive(Debug)]
+/// A materialized model with named, potentially multi-head outputs.
 pub struct HeadedModel<const INPUT: usize, Output> {
     inner: Box<dyn PredictRuntime<INPUT, Output>>,
 }
@@ -148,10 +164,12 @@ impl<const INPUT: usize, Output> HeadedModel<INPUT, Output> {
     }
 }
 
+/// Runtime prediction interface used by materialized headed models.
 pub trait PredictRuntime<const INPUT: usize, Output>: fmt::Debug {
     fn predict(&self, input: &[Float; INPUT]) -> Output;
 }
 
+/// Runtime training interface used by materialized single-output models.
 pub trait TrainRuntime<const INPUT: usize, const OUTPUT: usize>:
     PredictRuntime<INPUT, [Float; OUTPUT]>
 {
@@ -176,6 +194,9 @@ where
 
 pub type RootedBlueprint<InputShape, Spec> = Blueprint<Rooted<InputShape, Spec>>;
 
+/// Attaches an explicit input shape and axis naming scheme to a [`Blueprint`].
+///
+/// Once rooted, the blueprint can be validated, summarized, and materialized.
 pub fn root<InputShape, Spec>(
     spec: Blueprint<Spec>,
     axis_names: Vec<Axis>,
@@ -233,6 +254,10 @@ where
     blueprint
 }
 
+/// An inspectable blueprint specification for a fixed input shape.
+///
+/// `InputShape` is the compile-time tensor shape accepted by the blueprint.
+/// Implementors provide summary, shape-trace, and parameter-count behavior.
 pub trait BlueprintSpec<InputShape: TensorShape + 'static>: Clone + fmt::Debug + 'static {
     fn push_summary(&self, lines: &mut Vec<String>);
     fn push_shape_trace(&self, input_axes: &[Axis], lines: &mut Vec<String>);
@@ -301,6 +326,7 @@ where
     }
 }
 
+/// A [`BlueprintSpec`] that materializes into named prediction heads.
 pub trait HeadsSpec<InputShape: TensorShape + 'static>: BlueprintSpec<InputShape> {
     type Output: 'static;
     type Runtime: 'static;
@@ -350,6 +376,11 @@ fn features_axis() -> Box<[Axis]> {
     vec![Axis::Features].into_boxed_slice()
 }
 
+/// A single transform or transform-combinator over a fixed input shape.
+///
+/// `InputShape` is the compile-time shape accepted by the transform.
+/// [`TransformSpec::OutputShape`] is the compile-time shape produced after the
+/// transform runs.
 pub trait TransformSpec<InputShape: TensorShape + 'static>: Clone + fmt::Debug + 'static {
     type OutputShape: TensorShape;
     const OUTPUT_SIZE: usize;
@@ -375,6 +406,7 @@ pub trait TransformSpec<InputShape: TensorShape + 'static>: Clone + fmt::Debug +
 }
 
 #[doc(hidden)]
+/// Shape-level contract for dense layers that require a flat input.
 pub trait DenseExpectsFlatInput<const OUT: usize, const BIAS: bool>: TensorShape + 'static {
     type Runtime: 'static;
 
@@ -442,6 +474,10 @@ pub struct SharedSpec<Spec> {
 }
 
 #[doc(hidden)]
+/// Compile-time compatibility rule for sequencing two transforms.
+///
+/// `InputShape` is the shape accepted by `Left`.
+/// `Left` must produce the shape expected by `Right`.
 pub trait SeqCompatible<InputShape, Left, Right>: TensorShape + 'static
 where
     InputShape: TensorShape + 'static,
@@ -455,6 +491,7 @@ where
     fn materialize_seq(left: &Left, right: &Right, ctx: &mut MaterializeContext) -> Self::Runtime;
 }
 
+/// Marker trait for transforms that leave the input shape unchanged.
 pub trait ShapePreserving<InputShape: TensorShape + 'static>:
     TransformSpec<InputShape, OutputShape = InputShape>
 {
@@ -468,6 +505,7 @@ where
 }
 
 #[doc(hidden)]
+/// Compile-time concat rule for two branch output shapes.
 pub trait ConcatAlong<
     InputShape: TensorShape + 'static,
     LeftOut: TensorShape,
