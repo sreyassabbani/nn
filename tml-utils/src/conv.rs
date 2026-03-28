@@ -1,5 +1,8 @@
+//! Low-level convolution layers and geometry helpers.
+
 use crate::network::{Initializer, Layer, LayerDims, Optimizer, XavierUniform};
 use crate::{__private::ConvGeometryIsValid, Float, tensor::Tensor};
+
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::array;
 

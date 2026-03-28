@@ -1,3 +1,5 @@
+//! Classic sequential training APIs retained during the architecture-language redesign.
+
 mod builder;
 mod layers;
 mod loss;

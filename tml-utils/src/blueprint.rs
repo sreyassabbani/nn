@@ -1,3 +1,5 @@
+//! Typed architecture blueprints and rooted model materialization.
+
 use crate::network::{LossFunction, MeanSquaredError, TrainConfig};
 use crate::shape::TensorShape;
 use crate::{Float, Sample};

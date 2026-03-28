@@ -9,7 +9,7 @@ error[E0277]: the trait bound `Dim<1, Dim<4, Dim<4, Nil, "width">, "height">, "c
   |
 help: the trait `tml_utils::blueprint::DenseExpectsFlatInput<2, true>` is not implemented for `Dim<1, Dim<4, Dim<4, Nil, "width">, "height">, "channels">`
       but it is implemented for `Dim<1, Nil, _>`
- --> $WORKSPACE/tml-utils/src/blueprint/transforms.rs
+ --> $WORKSPACE/tml-utils/src/blueprint/transforms/leaf.rs
   |
   | / impl<const N: usize, const NAME: &'static str, const OUT: usize, const BIAS: bool>
   | |     DenseExpectsFlatInput<OUT, BIAS> for Dim<N, Nil, NAME>
