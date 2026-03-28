@@ -3,7 +3,7 @@ use std::{fmt, marker::PhantomData, ops};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use crate::shape::{Dim, Nil, NonScalarShape, TensorShape};
-use crate::{Float, ReshapePreservesElementCount};
+use crate::{Float, ReshapePreservesElementCount, ShapeRelabelPreservesExtents};
 
 struct StorageTensor<Storage, Shape: TensorShape> {
     storage: Storage,
@@ -287,6 +287,16 @@ where
         Tensor::<NewShape>::from_boxed(self.0.storage)
     }
 
+    /// Reinterprets the tensor with a shape that has the same extents but
+    /// potentially different axis labels.
+    pub fn relabel<NewShape>(self) -> Tensor<NewShape>
+    where
+        NewShape: TensorShape,
+        (): ShapeRelabelPreservesExtents<Shape, NewShape>,
+    {
+        Tensor::<NewShape>::from_boxed(self.0.storage)
+    }
+
     pub fn as_ref(&self) -> TensorRef<'_, Shape> {
         TensorRef(StorageTensor::from_storage(self.as_slice()))
     }
@@ -380,6 +390,16 @@ where
     {
         TensorRef(StorageTensor::from_storage(self.0.storage))
     }
+
+    /// Reinterprets the tensor view with a shape that has the same extents but
+    /// potentially different axis labels.
+    pub fn relabel<NewShape>(self) -> TensorRef<'a, NewShape>
+    where
+        NewShape: TensorShape,
+        (): ShapeRelabelPreservesExtents<Shape, NewShape>,
+    {
+        TensorRef(StorageTensor::from_storage(self.0.storage))
+    }
 }
 
 impl<'a, Shape> TensorMut<'a, Shape>
@@ -430,6 +450,16 @@ where
     where
         NewShape: TensorShape,
         (): ReshapePreservesElementCount<{ Shape::SIZE }, { NewShape::SIZE }>,
+    {
+        TensorMut(StorageTensor::from_storage(self.0.storage))
+    }
+
+    /// Reinterprets the mutable tensor view with a shape that has the same
+    /// extents but potentially different axis labels.
+    pub fn relabel<NewShape>(self) -> TensorMut<'a, NewShape>
+    where
+        NewShape: TensorShape,
+        (): ShapeRelabelPreservesExtents<Shape, NewShape>,
     {
         TensorMut(StorageTensor::from_storage(self.0.storage))
     }
@@ -670,6 +700,9 @@ where
 
 #[macro_export]
 macro_rules! tensor {
+    [as $shape:ty; $value:expr] => {
+        $crate::__tensor_from_literal($value).relabel::<$shape>()
+    };
     [$($items:tt)*] => {
         $crate::__tensor_from_literal([$($items)*])
     };
@@ -728,6 +761,21 @@ mod tests {
         let t = crate::tensor![[1.0, 2.0], [3.0, 4.0]];
         assert_eq!(t.as_slice(), &[1.0, 2.0, 3.0, 4.0]);
         assert_eq!(*t.at([1, 0]), 3.0);
+    }
+
+    #[test]
+    fn labeled_tensor_literal_preserves_axis_names() {
+        let t = crate::tensor![as crate::shape!(row: 2, col: 2); [[1.0, 2.0], [3.0, 4.0]]];
+        assert_eq!(
+            <crate::shape!(row: 2, col: 2) as TensorShape>::axis_names(),
+            vec![Some("row"), Some("col")]
+        );
+        let row = t.get_ref(1);
+        assert_eq!(
+            <crate::shape!(col: 2) as TensorShape>::axis_names(),
+            vec![Some("col")]
+        );
+        assert_eq!(row.as_slice(), &[3.0, 4.0]);
     }
 
     #[test]

@@ -116,6 +116,21 @@ pub use tensor::__tensor_from_literal;
 pub use tensor::{Tensor, TensorMut, TensorRef};
 
 #[doc(hidden)]
+pub trait ShapeRelabelPreservesExtents<From: shape::TensorShape, To: shape::TensorShape> {}
+
+impl ShapeRelabelPreservesExtents<shape::Nil, shape::Nil> for () {}
+
+impl<const N: usize, RestFrom, RestTo, const FROM_NAME: &'static str, const TO_NAME: &'static str>
+    ShapeRelabelPreservesExtents<shape::Dim<N, RestFrom, FROM_NAME>, shape::Dim<N, RestTo, TO_NAME>>
+    for ()
+where
+    RestFrom: shape::TensorShape,
+    RestTo: shape::TensorShape,
+    (): ShapeRelabelPreservesExtents<RestFrom, RestTo>,
+{
+}
+
+#[doc(hidden)]
 pub const fn shared_name_id(name: &str) -> usize {
     let bytes = name.as_bytes();
     let mut hash = 1469598103934665603usize;
