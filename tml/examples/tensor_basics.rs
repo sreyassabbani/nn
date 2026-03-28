@@ -13,7 +13,7 @@ fn main() {
     zeros.set([0, 1, 2], 9.0);
     dbg!(&zeros.as_slice());
 
-    let literal = tensor![as shape!(row: 2, col: 3); [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]];
+    let literal = tensor! { shape: shape!(row: 2, col: 3); [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]] };
     dbg!(&literal.at([1, 2]));
     dbg!(literal.rank());
     dbg!(<shape!(row: 2, col: 3) as TensorShape>::axis_names());

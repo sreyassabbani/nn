@@ -240,7 +240,7 @@ fn lower_share_expr(expr: &Expr) -> Result<TokenStream2> {
     }
 
     let share_id = quote! {
-        ::tml::shared_name_id(concat!(module_path!(), "::", stringify!(#expr)))
+        ::tml::__private::shared_name_id(concat!(module_path!(), "::", stringify!(#expr)))
     };
 
     Ok(quote! { ::tml::share_fragment_with_id(&#expr, #share_id) })

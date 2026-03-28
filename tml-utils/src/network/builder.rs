@@ -1,5 +1,5 @@
 use crate::conv::{Conv, conv_out_dim};
-use crate::{ConvGeometryIsValid, Float, Sample};
+use crate::{__private::ConvGeometryIsValid, Float, Sample};
 use rand::{SeedableRng, rngs::StdRng, seq::SliceRandom};
 use std::fmt;
 

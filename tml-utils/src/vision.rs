@@ -1,6 +1,9 @@
 pub mod common {
-    use crate::blueprint::{Blueprint, ConvSpec, Fragment, ReLUSpec, ResidualSpec, SeqSpec};
-    use crate::{conv, relu, residual};
+    //! Reusable, opinionated vision fragments built on top of blueprints.
+
+    use crate::blueprint::{
+        Blueprint, ConvSpec, Fragment, ReLUSpec, ResidualSpec, SeqSpec, conv, relu, residual,
+    };
 
     pub type StemSpec<const C1: usize, const C2: usize> = SeqSpec<
         SeqSpec<SeqSpec<ConvSpec<C1, 3, 3, 1, 1>, ReLUSpec>, ConvSpec<C2, 3, 3, 1, 1>>,

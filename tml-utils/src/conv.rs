@@ -1,5 +1,5 @@
 use crate::network::{Initializer, Layer, LayerDims, Optimizer, XavierUniform};
-use crate::{ConvGeometryIsValid, Float, tensor::Tensor};
+use crate::{__private::ConvGeometryIsValid, Float, tensor::Tensor};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::array;
 

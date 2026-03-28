@@ -15,7 +15,7 @@ fn main() {
     let mut image: Tensor<Image> = Tensor::zeros();
     image.set([0, 1, 2], 9.0);
 
-    let literal = tensor![as shape!(sensor: 2, time: 4, freq: 8); [
+    let literal = tensor! { shape: shape!(sensor: 2, time: 4, freq: 8); [
         [
             [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
             [8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0],
@@ -28,7 +28,7 @@ fn main() {
             [48.0, 49.0, 50.0, 51.0, 52.0, 53.0, 54.0, 55.0],
             [56.0, 57.0, 58.0, 59.0, 60.0, 61.0, 62.0, 63.0],
         ],
-    ]];
+    ] };
 
     println!("image dims: {:?}", Image::dims());
     println!("image axis names: {:?}", Image::axis_names());

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
-use crate::ConvKernelFitsInput;
+use crate::__private::ConvKernelFitsInput;
 use crate::conv::{Conv, conv_out_dim};
 use crate::network::{DenseLayer, Flatten, ReLU, Sigmoid, XavierUniform};
 use crate::shape::{Dim, Nil, TensorShape};

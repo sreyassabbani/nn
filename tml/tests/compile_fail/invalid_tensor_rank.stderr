@@ -7,7 +7,7 @@ error[E0107]: struct takes 1 generic argument but 3 generic arguments were suppl
   |             expected 1 generic argument
   |
 note: struct defined here, with 1 generic parameter: `Shape`
- --> $WORKSPACE/tml-utils/src/tensor.rs
+ --> $WORKSPACE/tml-utils/src/tensor/mod.rs
   |
-  | pub struct Tensor<Shape: TensorShape>(StorageTensor<Box<[Float]>, Shape>);
+  | pub struct Tensor<Shape: TensorShape>(StorageTensor<Box<[crate::Float]>, Shape>);
   |            ^^^^^^ -----
