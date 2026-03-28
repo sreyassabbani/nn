@@ -128,6 +128,47 @@ fn repeat_accepts_shape_preserving_blocks() {
 }
 
 #[test]
+fn manual_root_uses_shape_labels_in_summary_and_trace() {
+    type Spectrogram = tml::shape!(sensor: 1, time: 8, freq: 8);
+
+    let spec = tml::conv::<2, 3, 3, 1, 1>()
+        .then(tml::relu())
+        .then(tml::flatten())
+        .then(tml::dense::<3>());
+    let arch = tml::validate_blueprint(tml::root::<Spectrogram, _>(
+        spec,
+        vec![tml::Axis::CHANNELS, tml::Axis::HEIGHT, tml::Axis::WIDTH],
+    ));
+
+    let summary = arch.summary();
+    assert!(summary.contains("input (sensor: 1, time: 8, freq: 8)"));
+
+    let trace = arch.shape_trace();
+    assert!(trace.contains("(sensor: 1, time: 8, freq: 8) -> (sensor: 2, time: 8, freq: 8)"));
+    assert!(trace.contains("(sensor: 2, time: 8, freq: 8) -> (features: 128)"));
+}
+
+#[test]
+fn custom_labels_drive_concat_selection() {
+    type Tokens = tml::shape!(tokens: 2);
+
+    let spec = tml::concat(tml::Axis::new("tokens"), tml::identity(), tml::identity())
+        .then(tml::dense::<1>());
+    let arch = tml::validate_blueprint(tml::root::<Tokens, _>(spec, Vec::new()));
+
+    let summary = arch.summary();
+    assert!(summary.contains("input (tokens: 2)"));
+    assert!(summary.contains("concat(tokens)"));
+
+    let trace = arch.shape_trace();
+    assert!(trace.contains("(tokens: 2) -> (tokens: 4)"));
+
+    let model = arch.materialize(InitConfig::new().seed(19));
+    let out = model.predict(&[1.0, -1.0]);
+    assert_eq!(out.len(), 1);
+}
+
+#[test]
 fn saved_sources_can_be_summed_back_into_the_pipeline() {
     let arch = network! {
         input(features: 2)

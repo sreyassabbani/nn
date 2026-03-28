@@ -19,31 +19,31 @@ pub use transforms::{
 
 use runtime::GraphRunner;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Built-in axis names currently used by rooted blueprints and summaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// A blueprint-visible axis label.
 ///
-/// This enum belongs to the blueprint/input side of the library, not the core
-/// tensor shape encoding. The tensor shape layer now preserves raw `shape!`
-/// labels separately.
-pub enum Axis {
-    Features,
-    Channels,
-    Length,
-    Depth,
-    Height,
-    Width,
-}
+/// [`Axis`] is intentionally just a label wrapper. It is used for summaries,
+/// shape traces, concat selection, and other blueprint-facing APIs. The actual
+/// tensor-shape layer still carries dimensions and, when available, labels in
+/// the [`TensorShape`] type itself.
+pub struct Axis(&'static str);
 
 impl Axis {
-    fn as_str(self) -> &'static str {
-        match self {
-            Axis::Features => "features",
-            Axis::Channels => "channels",
-            Axis::Length => "length",
-            Axis::Depth => "depth",
-            Axis::Height => "height",
-            Axis::Width => "width",
-        }
+    pub const FEATURES: Self = Self("features");
+    pub const CHANNELS: Self = Self("channels");
+    pub const LENGTH: Self = Self("length");
+    pub const DEPTH: Self = Self("depth");
+    pub const HEIGHT: Self = Self("height");
+    pub const WIDTH: Self = Self("width");
+
+    /// Creates an axis label from a static name.
+    pub const fn new(name: &'static str) -> Self {
+        Self(name)
+    }
+
+    /// Returns the label string.
+    pub const fn as_str(self) -> &'static str {
+        self.0
     }
 }
 
@@ -206,29 +206,32 @@ where
 {
     Blueprint::new(Rooted {
         spec: spec.into_inner(),
-        axis_names: axis_names.into_boxed_slice(),
+        axis_names: resolved_axis_names::<InputShape>(&axis_names),
         _shape: PhantomData,
     })
 }
 
 pub fn features_input<const N: usize, Spec>(
     spec: Blueprint<Spec>,
-) -> RootedBlueprint<crate::shape!(N), Spec> {
-    root::<crate::shape!(N), _>(spec, vec![Axis::Features])
+) -> RootedBlueprint<crate::shape!(features: N), Spec> {
+    root::<crate::shape!(features: N), _>(spec, vec![Axis::FEATURES])
 }
 
 pub fn image_input<const C: usize, const H: usize, const W: usize, Spec>(
     spec: Blueprint<Spec>,
-) -> RootedBlueprint<crate::shape!(C, H, W), Spec> {
-    root::<crate::shape!(C, H, W), _>(spec, vec![Axis::Channels, Axis::Height, Axis::Width])
+) -> RootedBlueprint<crate::shape!(channels: C, height: H, width: W), Spec> {
+    root::<crate::shape!(channels: C, height: H, width: W), _>(
+        spec,
+        vec![Axis::CHANNELS, Axis::HEIGHT, Axis::WIDTH],
+    )
 }
 
 pub fn volume_input<const C: usize, const D: usize, const H: usize, const W: usize, Spec>(
     spec: Blueprint<Spec>,
-) -> RootedBlueprint<crate::shape!(C, D, H, W), Spec> {
-    root::<crate::shape!(C, D, H, W), _>(
+) -> RootedBlueprint<crate::shape!(channels: C, depth: D, height: H, width: W), Spec> {
+    root::<crate::shape!(channels: C, depth: D, height: H, width: W), _>(
         spec,
-        vec![Axis::Channels, Axis::Depth, Axis::Height, Axis::Width],
+        vec![Axis::CHANNELS, Axis::DEPTH, Axis::HEIGHT, Axis::WIDTH],
     )
 }
 
@@ -360,8 +363,9 @@ where
 
 fn describe_shape<Shape: TensorShape>(axes: &[Axis]) -> String {
     let dims = Shape::dims();
-    if dims.len() == axes.len() {
-        let parts = axes
+    let labels = resolved_axis_names::<Shape>(axes);
+    if dims.len() == labels.len() {
+        let parts = labels
             .iter()
             .zip(dims.iter())
             .map(|(axis, dim)| format!("{}: {}", axis.as_str(), dim))
@@ -373,7 +377,24 @@ fn describe_shape<Shape: TensorShape>(axes: &[Axis]) -> String {
 }
 
 fn features_axis() -> Box<[Axis]> {
-    vec![Axis::Features].into_boxed_slice()
+    vec![Axis::FEATURES].into_boxed_slice()
+}
+
+fn resolved_axis_names<Shape: TensorShape>(fallback: &[Axis]) -> Box<[Axis]> {
+    let shape_names = Shape::axis_names();
+    if shape_names.is_empty() {
+        return fallback.to_vec().into_boxed_slice();
+    }
+
+    shape_names
+        .into_iter()
+        .enumerate()
+        .map(|(idx, name)| match name {
+            Some(name) => Axis::new(name),
+            None => fallback.get(idx).copied().unwrap_or(Axis::new("axis")),
+        })
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
 }
 
 /// A single transform or transform-combinator over a fixed input shape.

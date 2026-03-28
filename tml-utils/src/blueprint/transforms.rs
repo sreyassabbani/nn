@@ -1,9 +1,9 @@
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
+use crate::ConvKernelFitsInput;
 use crate::conv::{Conv, conv_out_dim};
 use crate::network::{DenseLayer, Flatten, ReLU, Sigmoid, XavierUniform};
-use crate::shape::TensorShape;
-use crate::{ConvKernelFitsInput, shape};
+use crate::shape::{Dim, Nil, TensorShape};
 
 use super::runtime::{
     ConcatRuntime, LeafRuntime, MaterializeContext, ResidualRuntime, SeqRuntime, SharedRuntime,
@@ -96,8 +96,8 @@ pub fn repeat_stage<Spec>(blueprint: Blueprint<Spec>) -> Blueprint<RepeatStageSp
 }
 
 #[doc(hidden)]
-impl<const N: usize, const OUT: usize, const BIAS: bool> DenseExpectsFlatInput<OUT, BIAS>
-    for shape!(N)
+impl<const N: usize, const NAME: &'static str, const OUT: usize, const BIAS: bool>
+    DenseExpectsFlatInput<OUT, BIAS> for Dim<N, Nil, NAME>
 where
     [(); N]:,
 {
@@ -120,7 +120,7 @@ impl<InputShape, const OUT: usize, const BIAS: bool> TransformSpec<InputShape>
 where
     InputShape: DenseExpectsFlatInput<OUT, BIAS>,
 {
-    type OutputShape = shape!(OUT);
+    type OutputShape = Dim<OUT, Nil, "features">;
     const OUTPUT_SIZE: usize = OUT;
     type Runtime = InputShape::Runtime;
 
@@ -147,11 +147,12 @@ where
 
 macro_rules! impl_pointwise_transform {
     ($spec:ty, $layer:ident, $desc:literal) => {
-        impl<const N: usize> TransformSpec<shape!(N)> for $spec
+        impl<const N: usize, const N_NAME: &'static str> TransformSpec<Dim<N, Nil, N_NAME>>
+            for $spec
         where
             [(); N]:,
         {
-            type OutputShape = shape!(N);
+            type OutputShape = Dim<N, Nil, N_NAME>;
             const OUTPUT_SIZE: usize = N;
             type Runtime = LeafRuntime<$layer<N>, N, N>;
 
@@ -172,11 +173,12 @@ macro_rules! impl_pointwise_transform {
             }
         }
 
-        impl<const A: usize, const B: usize> TransformSpec<shape!(A, B)> for $spec
+        impl<const A: usize, const B: usize, const A_NAME: &'static str, const B_NAME: &'static str>
+            TransformSpec<Dim<A, Dim<B, Nil, B_NAME>, A_NAME>> for $spec
         where
             [(); A * B]:,
         {
-            type OutputShape = shape!(A, B);
+            type OutputShape = Dim<A, Dim<B, Nil, B_NAME>, A_NAME>;
             const OUTPUT_SIZE: usize = A * B;
             type Runtime = LeafRuntime<$layer<{ A * B }>, { A * B }, { A * B }>;
 
@@ -197,12 +199,18 @@ macro_rules! impl_pointwise_transform {
             }
         }
 
-        impl<const C: usize, const H: usize, const W: usize> TransformSpec<shape!(C, H, W)>
-            for $spec
+        impl<
+            const C: usize,
+            const H: usize,
+            const W: usize,
+            const C_NAME: &'static str,
+            const H_NAME: &'static str,
+            const W_NAME: &'static str,
+        > TransformSpec<Dim<C, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, C_NAME>> for $spec
         where
             [(); C * H * W]:,
         {
-            type OutputShape = shape!(C, H, W);
+            type OutputShape = Dim<C, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, C_NAME>;
             const OUTPUT_SIZE: usize = C * H * W;
             type Runtime = LeafRuntime<$layer<{ C * H * W }>, { C * H * W }, { C * H * W }>;
 
@@ -223,12 +231,21 @@ macro_rules! impl_pointwise_transform {
             }
         }
 
-        impl<const C: usize, const D: usize, const H: usize, const W: usize>
-            TransformSpec<shape!(C, D, H, W)> for $spec
+        impl<
+            const C: usize,
+            const D: usize,
+            const H: usize,
+            const W: usize,
+            const C_NAME: &'static str,
+            const D_NAME: &'static str,
+            const H_NAME: &'static str,
+            const W_NAME: &'static str,
+        > TransformSpec<Dim<C, Dim<D, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, D_NAME>, C_NAME>>
+            for $spec
         where
             [(); C * D * H * W]:,
         {
-            type OutputShape = shape!(C, D, H, W);
+            type OutputShape = Dim<C, Dim<D, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, D_NAME>, C_NAME>;
             const OUTPUT_SIZE: usize = C * D * H * W;
             type Runtime =
                 LeafRuntime<$layer<{ C * D * H * W }>, { C * D * H * W }, { C * D * H * W }>;
@@ -258,7 +275,7 @@ macro_rules! impl_flatten_transform {
         where
             [(); { $size }]:,
         {
-            type OutputShape = shape!({ $size });
+            type OutputShape = Dim<{ $size }, Nil, "features">;
             const OUTPUT_SIZE: usize = $size;
             type Runtime = LeafRuntime<Flatten<{ $size }>, { $size }, { $size }>;
 
@@ -285,16 +302,40 @@ impl_pointwise_transform!(ReLUSpec, ReLU, "relu");
 impl_pointwise_transform!(SigmoidSpec, Sigmoid, "sigmoid");
 impl_pointwise_transform!(IdentitySpec, Flatten, "identity");
 
-impl_flatten_transform!([const N: usize] shape!(N), N);
-impl_flatten_transform!([const A: usize, const B: usize] shape!(A, B), A * B);
+impl_flatten_transform!([const N: usize, const N_NAME: &'static str] Dim<N, Nil, N_NAME>, N);
 impl_flatten_transform!(
-    [const C: usize, const H: usize, const W: usize]
-    shape!(C, H, W),
+    [
+        const A: usize,
+        const B: usize,
+        const A_NAME: &'static str,
+        const B_NAME: &'static str
+    ] Dim<A, Dim<B, Nil, B_NAME>, A_NAME>,
+    A * B
+);
+impl_flatten_transform!(
+    [
+        const C: usize,
+        const H: usize,
+        const W: usize,
+        const C_NAME: &'static str,
+        const H_NAME: &'static str,
+        const W_NAME: &'static str
+    ]
+    Dim<C, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, C_NAME>,
     C * H * W
 );
 impl_flatten_transform!(
-    [const C: usize, const D: usize, const H: usize, const W: usize]
-    shape!(C, D, H, W),
+    [
+        const C: usize,
+        const D: usize,
+        const H: usize,
+        const W: usize,
+        const C_NAME: &'static str,
+        const D_NAME: &'static str,
+        const H_NAME: &'static str,
+        const W_NAME: &'static str
+    ]
+    Dim<C, Dim<D, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, D_NAME>, C_NAME>,
     C * D * H * W
 );
 
@@ -302,22 +343,30 @@ impl<
     const C: usize,
     const H: usize,
     const W: usize,
+    const C_NAME: &'static str,
+    const H_NAME: &'static str,
+    const W_NAME: &'static str,
     const OUT: usize,
     const KH: usize,
     const KW: usize,
     const STRIDE: usize,
     const PAD: usize,
-> TransformSpec<shape!(C, H, W)> for ConvSpec<OUT, KH, KW, STRIDE, PAD>
+> TransformSpec<Dim<C, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, C_NAME>>
+    for ConvSpec<OUT, KH, KW, STRIDE, PAD>
 where
     [(); C * H * W]:,
     [(); OUT * conv_out_dim(H, PAD, KH, STRIDE) * conv_out_dim(W, PAD, KW, STRIDE)]:,
     (): ConvKernelFitsInput<H, W, KH, KW, STRIDE, PAD>,
 {
-    type OutputShape = shape!(
+    type OutputShape = Dim<
         OUT,
-        conv_out_dim(H, PAD, KH, STRIDE),
-        conv_out_dim(W, PAD, KW, STRIDE)
-    );
+        Dim<
+            { conv_out_dim(H, PAD, KH, STRIDE) },
+            Dim<{ conv_out_dim(W, PAD, KW, STRIDE) }, Nil, W_NAME>,
+            H_NAME,
+        >,
+        C_NAME,
+    >;
     const OUTPUT_SIZE: usize =
         OUT * conv_out_dim(H, PAD, KH, STRIDE) * conv_out_dim(W, PAD, KW, STRIDE);
     type Runtime = LeafRuntime<
@@ -378,16 +427,40 @@ macro_rules! impl_seq_compatible {
     };
 }
 
-impl_seq_compatible!([const N: usize] shape!(N), N);
-impl_seq_compatible!([const A: usize, const B: usize] shape!(A, B), A * B);
+impl_seq_compatible!([const N: usize, const N_NAME: &'static str] Dim<N, Nil, N_NAME>, N);
 impl_seq_compatible!(
-    [const C: usize, const H: usize, const W: usize]
-    shape!(C, H, W),
+    [
+        const A: usize,
+        const B: usize,
+        const A_NAME: &'static str,
+        const B_NAME: &'static str
+    ] Dim<A, Dim<B, Nil, B_NAME>, A_NAME>,
+    A * B
+);
+impl_seq_compatible!(
+    [
+        const C: usize,
+        const H: usize,
+        const W: usize,
+        const C_NAME: &'static str,
+        const H_NAME: &'static str,
+        const W_NAME: &'static str
+    ]
+    Dim<C, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, C_NAME>,
     C * H * W
 );
 impl_seq_compatible!(
-    [const C: usize, const D: usize, const H: usize, const W: usize]
-    shape!(C, D, H, W),
+    [
+        const C: usize,
+        const D: usize,
+        const H: usize,
+        const W: usize,
+        const C_NAME: &'static str,
+        const D_NAME: &'static str,
+        const H_NAME: &'static str,
+        const W_NAME: &'static str
+    ]
+    Dim<C, Dim<D, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, D_NAME>, C_NAME>,
     C * D * H * W
 );
 
@@ -513,29 +586,42 @@ where
     }
 }
 
-impl<InputShape, const A: usize, const B: usize> ConcatAlong<InputShape, shape!(A), shape!(B)>
-    for ()
+impl<InputShape, const A: usize, const B: usize, const NAME: &'static str>
+    ConcatAlong<InputShape, Dim<A, Nil, NAME>, Dim<B, Nil, NAME>> for ()
 where
     InputShape: TensorShape + 'static,
     [(); A + B]:,
 {
-    type OutputShape = shape!(A + B);
+    type OutputShape = Dim<{ A + B }, Nil, NAME>;
     fn axis_ok(axis: Axis) -> bool {
-        axis == Axis::Features
+        axis == Axis::new(NAME)
     }
 }
 
-impl<InputShape, const C1: usize, const C2: usize, const H: usize, const W: usize>
-    ConcatAlong<InputShape, shape!(C1, H, W), shape!(C2, H, W)> for ()
+impl<
+    InputShape,
+    const C1: usize,
+    const C2: usize,
+    const H: usize,
+    const W: usize,
+    const C_NAME: &'static str,
+    const H_NAME: &'static str,
+    const W_NAME: &'static str,
+>
+    ConcatAlong<
+        InputShape,
+        Dim<C1, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, C_NAME>,
+        Dim<C2, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, C_NAME>,
+    > for ()
 where
     InputShape: TensorShape + 'static,
     [(); C1 * H * W]:,
     [(); C2 * H * W]:,
     [(); (C1 + C2) * H * W]:,
 {
-    type OutputShape = shape!(C1 + C2, H, W);
+    type OutputShape = Dim<{ C1 + C2 }, Dim<H, Dim<W, Nil, W_NAME>, H_NAME>, C_NAME>;
     fn axis_ok(axis: Axis) -> bool {
-        axis == Axis::Channels
+        axis == Axis::new(C_NAME)
     }
 }
 

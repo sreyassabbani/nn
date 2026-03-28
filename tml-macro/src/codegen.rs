@@ -606,18 +606,20 @@ fn wrap_root(input: &InputSpec, body: TokenStream2) -> TokenStream2 {
 
 fn input_shape_ty(input: &InputSpec) -> TokenStream2 {
     match input {
-        InputSpec::Features { features } => quote! { ::tml::shape!(#features) },
+        InputSpec::Features { features } => quote! { ::tml::shape!(features: #features) },
         InputSpec::Image {
             channels,
             height,
             width,
-        } => quote! { ::tml::shape!(#channels, #height, #width) },
+        } => quote! { ::tml::shape!(channels: #channels, height: #height, width: #width) },
         InputSpec::Volume {
             channels,
             depth,
             height,
             width,
-        } => quote! { ::tml::shape!(#channels, #depth, #height, #width) },
+        } => {
+            quote! { ::tml::shape!(channels: #channels, depth: #depth, height: #height, width: #width) }
+        }
     }
 }
 
@@ -639,20 +641,8 @@ fn input_size_expr(input: &InputSpec) -> TokenStream2 {
 }
 
 fn axis_tokens(axis: &syn::Ident) -> Result<TokenStream2> {
-    Ok(match axis.to_string().as_str() {
-        "features" => quote! { ::tml::Axis::Features },
-        "channels" => quote! { ::tml::Axis::Channels },
-        "length" => quote! { ::tml::Axis::Length },
-        "depth" => quote! { ::tml::Axis::Depth },
-        "height" => quote! { ::tml::Axis::Height },
-        "width" => quote! { ::tml::Axis::Width },
-        _ => {
-            return Err(Error::new(
-                axis.span(),
-                "unknown axis; expected one of features, channels, length, depth, height, width",
-            ));
-        }
-    })
+    let axis = axis.to_string();
+    Ok(quote! { ::tml::Axis::new(#axis) })
 }
 
 fn path_name(expr: &Expr) -> Option<String> {
