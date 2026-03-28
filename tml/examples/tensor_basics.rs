@@ -1,11 +1,14 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs, adt_const_params, unsized_const_params)]
 
-use tml::{Tensor, TensorMut, TensorRef, shape, tensor};
+use tml::{Tensor, TensorMut, TensorRef, TensorShape, shape, tensor};
 
-type Image = shape!(1, 2, 3);
+type Image = shape!(channel: 1, row: 2, col: 3);
 
 fn main() {
+    dbg!(Image::dims());
+    dbg!(Image::axis_names());
+
     let mut zeros: Tensor<Image> = Tensor::zeros();
     zeros.set([0, 1, 2], 9.0);
     dbg!(&zeros.as_slice());
@@ -13,7 +16,7 @@ fn main() {
     let literal = tensor![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
     dbg!(&literal.at([1, 2]));
 
-    let flat = literal.clone().reshape::<shape!(3, 2)>();
+    let flat = literal.clone().reshape::<shape!(row: 3, col: 2)>();
     dbg!(&flat.map(|x| x * 2.));
 
     let row: TensorRef<'_, shape!(3)> = literal.get_ref(1);
