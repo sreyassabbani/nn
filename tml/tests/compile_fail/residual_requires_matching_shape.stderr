@@ -9,8 +9,8 @@ error[E0271]: type mismatch resolving `<DenseSpec<3> as TransformSpec<Dim<2, Nil
   |
   = note: expected struct `Dim<2, Nil, "features">`
              found struct `Dim<3, Nil, "features">`
-  = note: required for `tml_utils::blueprint::specs::DenseSpec<3>` to implement `tml_utils::blueprint::specs::ShapePreserving<Dim<2, Nil, "features">>`
-  = note: required for `tml_utils::blueprint::specs::ResidualSpec<tml_utils::blueprint::specs::DenseSpec<3>>` to implement `TransformSpec<Dim<2, Nil, "features">>`
+  = note: required for `DenseSpec<3>` to implement `ShapePreserving<Dim<2, Nil, "features">>`
+  = note: required for `ResidualSpec<DenseSpec<3>>` to implement `TransformSpec<Dim<2, Nil, "features">>`
 note: required by a bound in `validate_blueprint`
  --> $WORKSPACE/tml-utils/src/blueprint/rooted.rs
   |

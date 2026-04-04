@@ -20,7 +20,7 @@ pub mod blueprint;
 pub mod conv;
 /// Dataset sample helpers.
 pub mod data;
-/// Classic sequential-network components retained during the migration.
+/// Training configuration, optimizers, losses, and runtime layer primitives.
 pub mod network;
 /// Compile-time tensor shapes.
 pub mod shape;

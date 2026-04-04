@@ -62,7 +62,10 @@ assert_eq!(flat.as_slice(), &[1., 2., 3., 4.]);
 
 - [`tensor_basics.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/tensor_basics.rs)
 - [`conv.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/conv.rs)
-- [`sequential_manual.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/sequential_manual.rs)
+- [`named_sources.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/named_sources.rs)
+- [`rust_fragments.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/rust_fragments.rs)
+- [`api-previews/satellite_fpn.rs`](https://github.com/sreyassabbani/tml/blob/main/api-previews/satellite_fpn.rs)
+- [`api-previews/spectrogram_events.rs`](https://github.com/sreyassabbani/tml/blob/main/api-previews/spectrogram_events.rs)
 - [`linear_regression.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/linear_regression.rs)
 
 ## Version note

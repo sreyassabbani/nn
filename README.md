@@ -84,18 +84,6 @@ let net = arch.materialize(InitConfig::new());
 let logits = net.predict(&[0.0; 3 * 32 * 32]);
 ```
 
-The older builder API still exists as a compatibility shim, but `network!` is now the primary public entrypoint.
-You can still build equivalent runtimes manually if needed:
-```rs
-use tml::ModelBuilder;
-
-let net = ModelBuilder::new()
-    .input::<1>()
-    .dense::<8>()
-    .relu()
-    .dense::<1>()
-    .build();
-```
 
 ### Tensor Algebra
 
@@ -131,7 +119,9 @@ This style is what the public tensor API is optimized around:
 The examples in [`tml/examples`](tml/examples) are a good starting point:
 - [`tensor_basics.rs`](tml/examples/tensor_basics.rs) shows `shape!`, `Tensor<Shape>`, `TensorRef`, `TensorMut`, literals, indexing, and reshape
 - [`conv.rs`](tml/examples/conv.rs) shows the typed network DSL on image inputs
-- [`sequential_manual.rs`](tml/examples/sequential_manual.rs) shows the same training runtime without `network!`
+- [`named_sources.rs`](tml/examples/named_sources.rs) shows skip-style composition with named saved sources
+- [`rust_fragments.rs`](tml/examples/rust_fragments.rs) shows Rust-defined reusable fragments composed inside `network!`
+- [`api-previews/satellite_fpn.rs`](api-previews/satellite_fpn.rs) and [`api-previews/spectrogram_events.rs`](api-previews/spectrogram_events.rs) pressure-test the current surface on less cliché domains without slowing the compiled example set
 - [`linear_regression.rs`](tml/examples/linear_regression.rs) and [`quadratic_regression.rs`](tml/examples/quadratic_regression.rs) show simple end-to-end training flows
 
 ### Automatic differentiation

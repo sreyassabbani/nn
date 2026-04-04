@@ -1,6 +1,12 @@
+//! Loss traits and built-in loss helpers for materialized models.
+
 use crate::Float;
 use std::fmt;
 
+/// A differentiable loss over fixed-size outputs.
+///
+/// Implementors compute both the scalar loss value and the gradient of that
+/// loss with respect to the model output.
 pub trait LossFunction<const N: usize>: fmt::Debug {
     fn loss_and_grad(
         &self,
@@ -10,9 +16,11 @@ pub trait LossFunction<const N: usize>: fmt::Debug {
     ) -> Float;
 }
 
+/// Mean-squared error over two fixed-size vectors.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MeanSquaredError;
 
+/// Computes mean-squared error and writes the output gradient in one pass.
 pub fn mse_loss<const N: usize>(
     output: &[Float; N],
     target: &[Float; N],

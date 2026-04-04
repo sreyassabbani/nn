@@ -21,6 +21,74 @@ It should not optimize for:
 - forcing users into a global axis ontology
 - adding second or third parallel API styles
 
+## Implemented Branch Reality
+
+The current `prototype/rust-fragments` branch is now opinionated enough that the
+implemented surface should be stated explicitly.
+
+What is real today:
+- `network!` composes rooted single-input blueprints
+- reusable fragments live in Rust and can be bound with ordinary `let`
+- named Rust fragment values and fragment factory calls work inside `network!`
+- `share(name)` works on named fragment bindings
+- `save(name)`, `sum_from(name)`, and `concat_from(name, axis)` work for topological long skips
+- rooted blueprints materialize via `materialize(InitConfig)`
+- tensor shapes preserve axis labels through `shape!(...)`
+
+What is **not** real yet:
+- arbitrary axis labels in `network!` input syntax
+- general `on:` / `over:` transform operands
+- multi-input roots
+- token/feature-native operators like `linear(on: ..., out: ...)`
+- true graph-runtime activation capture for named sources
+- real 3D conv in the blueprint DSL
+
+So the prototype has already made one important architectural choice:
+
+- Rust owns reusable fragments and contracts
+- `network!` owns composition
+- the core owns shape validation
+
+It has **not** yet delivered the full open-ended axis-operand language.
+
+## What The Current API Looks Like
+
+These are representative examples of the branch as it exists today.
+
+Non-cliche but currently supported examples:
+- spectrogram event detector:
+  - `/Users/sreysus/workflow/tml/api-previews/spectrogram_events.rs`
+- multispectral satellite feature-pyramid style model:
+  - `/Users/sreysus/workflow/tml/api-previews/satellite_fpn.rs`
+- long-skip additive pipeline:
+  - `/Users/sreysus/workflow/tml/tml/examples/named_sources.rs`
+- Rust-defined fragment composition:
+  - `/Users/sreysus/workflow/tml/tml/examples/rust_fragments.rs`
+
+These examples show the current sweet spot:
+- rooted single-input models
+- topological pipeline narration
+- reusable Rust fragments
+- skip-heavy architectures that still read linearly
+
+## Pressure-Test Sketches
+
+These sketches are intentionally not all implemented yet. They exist to reveal
+where the current API is strong and where it still strains.
+
+- bi-encoder retrieval:
+  - `/Users/sreysus/workflow/tml/api-previews/retrieval_biencoder.rs`
+- cryo-EM volumetric U-Net:
+  - `/Users/sreysus/workflow/tml/api-previews/cryo_volume_unet.rs`
+- program-trace transformer:
+  - `/Users/sreysus/workflow/tml/api-previews/program_trace_transformer.rs`
+
+Current reading of those sketches:
+- multi-input composition is still missing
+- 3D conv is still missing
+- sequence/token-native operators are still missing
+- the case for a future `linear(on: ..., out: ...)` surface remains strong
+
 ## Current Prototype Status
 
 The current branch prototype has now implemented two important corrections:
