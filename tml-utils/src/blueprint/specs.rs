@@ -84,12 +84,32 @@ pub trait DenseExpectsFlatInput<const OUT: usize, const BIAS: bool>: TensorShape
     fn dense_parameter_count() -> usize;
 }
 
+/// Shape-level contract for last-axis linear transforms.
+///
+/// Unlike [`DenseExpectsFlatInput`], this preserves every prefix axis and only
+/// rewrites the extent of the final axis.
+#[doc(hidden)]
+pub trait LinearOverLastAxis<const OUT: usize, const BIAS: bool>: TensorShape + 'static {
+    type OutputShape: TensorShape;
+    type Runtime: 'static;
+    const OUTPUT_SIZE: usize;
+
+    fn materialize_linear(ctx: &mut MaterializeContext) -> Self::Runtime;
+    fn linear_parameter_count() -> usize;
+}
+
 /// Dense layer spec marker.
 ///
 /// `OUT` is the output feature width. `BIAS` controls whether the runtime dense
 /// layer includes a trainable bias term.
 #[derive(Debug, Clone, Copy)]
 pub struct DenseSpec<const OUT: usize, const BIAS: bool = true>;
+
+/// Last-axis linear transform spec marker.
+///
+/// `OUT` is the new width of the final axis. Every prefix axis is preserved.
+#[derive(Debug, Clone, Copy)]
+pub struct LinearSpec<const OUT: usize, const BIAS: bool = true>;
 
 /// ReLU spec marker.
 #[derive(Debug, Clone, Copy)]

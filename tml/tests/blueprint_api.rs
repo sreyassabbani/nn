@@ -169,6 +169,41 @@ fn custom_labels_drive_concat_selection() {
 }
 
 #[test]
+fn arbitrary_named_inputs_work_with_last_axis_linear() {
+    let arch = network! {
+        input(tokens: 4, embed: 8) -> linear(3) -> flatten -> dense(2)
+    };
+
+    let summary = arch.summary();
+    assert!(summary.contains("input (tokens: 4, embed: 8)"));
+    assert!(summary.contains("linear(3)"));
+
+    let trace = arch.shape_trace();
+    assert!(trace.contains("(tokens: 4, embed: 8) -> (tokens: 4, embed: 3)"));
+    assert!(trace.contains("(tokens: 4, embed: 3) -> (features: 12)"));
+
+    let model = arch.materialize(InitConfig::new().seed(23));
+    let out = model.predict(&[0.25; 32]);
+    assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn last_axis_linear_preserves_prefix_axes_and_labels() {
+    let arch = network! {
+        input(sensors: 2, windows: 3, freq: 5) -> linear(7) -> flatten -> dense(1)
+    };
+
+    let trace = arch.shape_trace();
+    assert!(
+        trace.contains("(sensors: 2, windows: 3, freq: 5) -> (sensors: 2, windows: 3, freq: 7)")
+    );
+
+    let model = arch.materialize(InitConfig::new().seed(29));
+    let out = model.predict(&[0.1; 30]);
+    assert_eq!(out.len(), 1);
+}
+
+#[test]
 fn saved_sources_can_be_summed_back_into_the_pipeline() {
     let arch = network! {
         input(features: 2)

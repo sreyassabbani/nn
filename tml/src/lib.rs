@@ -14,10 +14,11 @@ pub use tml_utils::autodiff::{
 pub use tml_utils::blueprint;
 pub use tml_utils::blueprint::{
     Axis, Blueprint, BlueprintSpec, Fragment, FragmentExt, GraphRuntime, HeadedModel, HeadsSpec,
-    InitConfig, MaterializeContext, Model, PredictRuntime, TransformSpec, concat, conv, dense,
-    dense_no_bias, features_input, flatten, identity, image_input, into_blueprint, relu,
-    repeat_stage, residual, root, share_fragment_with_id, sigmoid, sum, validate_blueprint,
-    validate_headed_blueprint, volume_input,
+    InitConfig, LinearOverLastAxis, LinearSpec, MaterializeContext, Model, PredictRuntime,
+    TransformSpec, concat, conv, dense, dense_no_bias, features_input, flatten, identity,
+    image_input, into_blueprint, linear, linear_no_bias, relu, repeat_stage, residual, root,
+    share_fragment_with_id, sigmoid, sum, validate_blueprint, validate_headed_blueprint,
+    volume_input,
 };
 pub use tml_utils::conv;
 pub use tml_utils::data::Sample;

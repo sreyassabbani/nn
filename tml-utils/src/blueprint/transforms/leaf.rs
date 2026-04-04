@@ -5,10 +5,10 @@ use crate::conv::{Conv, conv_out_dim};
 use crate::network::{DenseLayer, Flatten, ReLU, Sigmoid, XavierUniform};
 use crate::shape::{Dim, Nil};
 
-use super::super::runtime::{LeafRuntime, MaterializeContext};
+use super::super::runtime::{LeafRuntime, LinearRuntime, MaterializeContext};
 use super::super::{
-    Axis, ConvSpec, DenseExpectsFlatInput, DenseSpec, FlattenSpec, IdentitySpec, ReLUSpec,
-    SigmoidSpec, TransformSpec, features_axis,
+    Axis, ConvSpec, DenseExpectsFlatInput, DenseSpec, FlattenSpec, IdentitySpec,
+    LinearOverLastAxis, LinearSpec, ReLUSpec, SigmoidSpec, TransformSpec, features_axis,
 };
 
 #[doc(hidden)]
@@ -57,6 +57,152 @@ where
             format!("dense({OUT})")
         } else {
             format!("dense({OUT}, bias: false)")
+        }
+    }
+}
+
+#[doc(hidden)]
+impl<const N: usize, const NAME: &'static str, const OUT: usize, const BIAS: bool>
+    LinearOverLastAxis<OUT, BIAS> for Dim<N, Nil, NAME>
+where
+    [(); N]:,
+{
+    type OutputShape = Dim<OUT, Nil, NAME>;
+    type Runtime = LinearRuntime<1, N, OUT>;
+    const OUTPUT_SIZE: usize = OUT;
+
+    fn materialize_linear(ctx: &mut MaterializeContext) -> Self::Runtime {
+        let layer = DenseLayer::<N, OUT>::with_initializer_and_rng(XavierUniform, &mut ctx.rng);
+        let layer = if BIAS { layer } else { layer.without_bias() };
+        LinearRuntime::new(layer)
+    }
+
+    fn linear_parameter_count() -> usize {
+        let bias = if BIAS { OUT } else { 0 };
+        N * OUT + bias
+    }
+}
+
+#[doc(hidden)]
+impl<
+    const A: usize,
+    const N: usize,
+    const A_NAME: &'static str,
+    const N_NAME: &'static str,
+    const OUT: usize,
+    const BIAS: bool,
+> LinearOverLastAxis<OUT, BIAS> for Dim<A, Dim<N, Nil, N_NAME>, A_NAME>
+where
+    [(); A * N]:,
+    [(); A * OUT]:,
+{
+    type OutputShape = Dim<A, Dim<OUT, Nil, N_NAME>, A_NAME>;
+    type Runtime = LinearRuntime<A, N, OUT>;
+    const OUTPUT_SIZE: usize = A * OUT;
+
+    fn materialize_linear(ctx: &mut MaterializeContext) -> Self::Runtime {
+        let layer = DenseLayer::<N, OUT>::with_initializer_and_rng(XavierUniform, &mut ctx.rng);
+        let layer = if BIAS { layer } else { layer.without_bias() };
+        LinearRuntime::new(layer)
+    }
+
+    fn linear_parameter_count() -> usize {
+        let bias = if BIAS { OUT } else { 0 };
+        N * OUT + bias
+    }
+}
+
+#[doc(hidden)]
+impl<
+    const A: usize,
+    const B: usize,
+    const N: usize,
+    const A_NAME: &'static str,
+    const B_NAME: &'static str,
+    const N_NAME: &'static str,
+    const OUT: usize,
+    const BIAS: bool,
+> LinearOverLastAxis<OUT, BIAS> for Dim<A, Dim<B, Dim<N, Nil, N_NAME>, B_NAME>, A_NAME>
+where
+    [(); A * B * N]:,
+    [(); A * B * OUT]:,
+{
+    type OutputShape = Dim<A, Dim<B, Dim<OUT, Nil, N_NAME>, B_NAME>, A_NAME>;
+    type Runtime = LinearRuntime<{ A * B }, N, OUT>;
+    const OUTPUT_SIZE: usize = A * B * OUT;
+
+    fn materialize_linear(ctx: &mut MaterializeContext) -> Self::Runtime {
+        let layer = DenseLayer::<N, OUT>::with_initializer_and_rng(XavierUniform, &mut ctx.rng);
+        let layer = if BIAS { layer } else { layer.without_bias() };
+        LinearRuntime::new(layer)
+    }
+
+    fn linear_parameter_count() -> usize {
+        let bias = if BIAS { OUT } else { 0 };
+        N * OUT + bias
+    }
+}
+
+#[doc(hidden)]
+impl<
+    const A: usize,
+    const B: usize,
+    const C: usize,
+    const N: usize,
+    const A_NAME: &'static str,
+    const B_NAME: &'static str,
+    const C_NAME: &'static str,
+    const N_NAME: &'static str,
+    const OUT: usize,
+    const BIAS: bool,
+> LinearOverLastAxis<OUT, BIAS>
+    for Dim<A, Dim<B, Dim<C, Dim<N, Nil, N_NAME>, C_NAME>, B_NAME>, A_NAME>
+where
+    [(); A * B * C * N]:,
+    [(); A * B * C * OUT]:,
+{
+    type OutputShape = Dim<A, Dim<B, Dim<C, Dim<OUT, Nil, N_NAME>, C_NAME>, B_NAME>, A_NAME>;
+    type Runtime = LinearRuntime<{ A * B * C }, N, OUT>;
+    const OUTPUT_SIZE: usize = A * B * C * OUT;
+
+    fn materialize_linear(ctx: &mut MaterializeContext) -> Self::Runtime {
+        let layer = DenseLayer::<N, OUT>::with_initializer_and_rng(XavierUniform, &mut ctx.rng);
+        let layer = if BIAS { layer } else { layer.without_bias() };
+        LinearRuntime::new(layer)
+    }
+
+    fn linear_parameter_count() -> usize {
+        let bias = if BIAS { OUT } else { 0 };
+        N * OUT + bias
+    }
+}
+
+impl<InputShape, const OUT: usize, const BIAS: bool> TransformSpec<InputShape>
+    for LinearSpec<OUT, BIAS>
+where
+    InputShape: LinearOverLastAxis<OUT, BIAS>,
+{
+    type OutputShape = <InputShape as LinearOverLastAxis<OUT, BIAS>>::OutputShape;
+    const OUTPUT_SIZE: usize = <InputShape as LinearOverLastAxis<OUT, BIAS>>::OUTPUT_SIZE;
+    type Runtime = <InputShape as LinearOverLastAxis<OUT, BIAS>>::Runtime;
+
+    fn materialize(&self, ctx: &mut MaterializeContext) -> Self::Runtime {
+        InputShape::materialize_linear(ctx)
+    }
+
+    fn parameter_count(&self, _seen_shared: &mut HashSet<usize>) -> usize {
+        InputShape::linear_parameter_count()
+    }
+
+    fn output_axes(&self, input_axes: &[Axis]) -> Box<[Axis]> {
+        input_axes.to_vec().into_boxed_slice()
+    }
+
+    fn description(&self) -> String {
+        if BIAS {
+            format!("linear({OUT})")
+        } else {
+            format!("linear({OUT}, bias: false)")
         }
     }
 }

@@ -16,10 +16,12 @@ Current branch reality:
 - `network!` composition is real.
 - rooted blueprints with `materialize(InitConfig)` are real.
 - `save(name)`, `sum_from(name)`, and `concat_from(name, axis)` are real.
+- arbitrary named input axes are real.
+- last-axis `linear(...)` is real.
 
 Still frontier:
 - multi-input roots
-- token/feature-native operators such as `linear(on: ..., out: ...)`
+- explicit axis operands such as `linear(on: ..., out: ...)`
 - attention/scan/reduce operators over named axes
 - true graph-runtime activation capture
 - rich volumetric and multimodal built-ins

@@ -6,8 +6,7 @@ use quote::{format_ident, quote};
 use syn::Result;
 
 use super::pipeline::lower_pipeline_expr;
-use super::root::input_shape_ty;
-use super::root::input_size_expr;
+use super::root::{input_axis_vec, input_shape_ty, input_size_expr};
 
 pub(super) fn generate_headed_root(
     input: &InputSpec,
@@ -55,30 +54,8 @@ pub(super) fn generate_headed_root(
                 #(#head_field_idents: #head_exprs,)*
             })
         };
-        match input {
-            InputSpec::Features { features } => {
-                quote! { ::tml::features_input::<{ #features }, _>(#spec) }
-            }
-            InputSpec::Image {
-                channels,
-                height,
-                width,
-            } => {
-                quote! {
-                    ::tml::image_input::<{ #channels }, { #height }, { #width }, _>(#spec)
-                }
-            }
-            InputSpec::Volume {
-                channels,
-                depth,
-                height,
-                width,
-            } => {
-                quote! {
-                    ::tml::volume_input::<{ #channels }, { #depth }, { #height }, { #width }, _>(#spec)
-                }
-            }
-        }
+        let axes = input_axis_vec(input);
+        quote! { ::tml::root::<#input_shape, _>(#spec, #axes) }
     };
 
     let head_summary_lines = head_names

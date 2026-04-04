@@ -40,6 +40,24 @@ let loss = net.fit(
 let prediction = net.predict(&[0.5]);
 ```
 
+Named axes are not limited to image-style labels, and `linear(...)` rewrites
+only the last axis:
+
+```rs
+use tml::{InitConfig, network};
+
+let arch = network! {
+    input(windows: 6, metrics: 12)
+        -> linear(8)
+        -> relu
+        -> flatten
+        -> dense(3)
+};
+
+let net = arch.materialize(InitConfig::new().seed(41));
+let logits = net.predict(&[0.25; 72]);
+```
+
 ## Tensors
 
 ```rs
@@ -62,10 +80,13 @@ assert_eq!(flat.as_slice(), &[1., 2., 3., 4.]);
 
 - [`tensor_basics.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/tensor_basics.rs)
 - [`conv.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/conv.rs)
+- [`incident_windows.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/incident_windows.rs)
 - [`named_sources.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/named_sources.rs)
 - [`rust_fragments.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/rust_fragments.rs)
 - [`api-previews/current/satellite_fpn.rs`](https://github.com/sreyassabbani/tml/blob/main/api-previews/current/satellite_fpn.rs)
 - [`api-previews/current/spectrogram_events.rs`](https://github.com/sreyassabbani/tml/blob/main/api-previews/current/spectrogram_events.rs)
+- [`api-previews/current/seismic_arrivals.rs`](https://github.com/sreyassabbani/tml/blob/main/api-previews/current/seismic_arrivals.rs)
+- [`api-previews/current/program_windows.rs`](https://github.com/sreyassabbani/tml/blob/main/api-previews/current/program_windows.rs)
 - [`api-previews/frontier/`](https://github.com/sreyassabbani/tml/tree/main/api-previews/frontier)
 - [`linear_regression.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/linear_regression.rs)
 

@@ -8,7 +8,8 @@ use syn::{Error, Result};
 
 use super::reusable::lower_reusable_expr;
 use super::stages::{
-    axis_tokens, lower_concat, lower_conv, lower_dense, lower_repeat, lower_share, lower_sum,
+    axis_tokens, lower_concat, lower_conv, lower_dense, lower_linear, lower_repeat, lower_share,
+    lower_sum,
 };
 
 pub(super) fn lower_pipeline_expr(pipeline: &PipelineAst) -> Result<TokenStream2> {
@@ -67,6 +68,7 @@ pub(super) fn lower_pipeline_expr(pipeline: &PipelineAst) -> Result<TokenStream2
 fn lower_step(step: &StepAst) -> Result<TokenStream2> {
     match step {
         StepAst::Dense(spec) => lower_dense(spec),
+        StepAst::Linear(spec) => lower_linear(spec),
         StepAst::Conv(spec) => lower_conv(spec),
         StepAst::ReLU => Ok(quote! { ::tml::relu() }),
         StepAst::Sigmoid => Ok(quote! { ::tml::sigmoid() }),

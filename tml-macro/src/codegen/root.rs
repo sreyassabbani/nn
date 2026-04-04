@@ -37,68 +37,29 @@ fn split_terminal_heads(steps: &[StepAst]) -> Result<Option<(&[StepAst], &[HeadA
 }
 
 pub(super) fn wrap_root(input: &InputSpec, body: TokenStream2) -> TokenStream2 {
-    match input {
-        InputSpec::Features { features } => {
-            quote! { ::tml::validate_blueprint(::tml::features_input::<{ #features }, _>(#body)) }
-        }
-        InputSpec::Image {
-            channels,
-            height,
-            width,
-        } => {
-            quote! {
-                ::tml::validate_blueprint(
-                    ::tml::image_input::<{ #channels }, { #height }, { #width }, _>(#body)
-                )
-            }
-        }
-        InputSpec::Volume {
-            channels,
-            depth,
-            height,
-            width,
-        } => {
-            quote! {
-                ::tml::validate_blueprint(
-                    ::tml::volume_input::<{ #channels }, { #depth }, { #height }, { #width }, _>(#body)
-                )
-            }
-        }
+    let shape = input_shape_ty(input);
+    let axes = input_axis_vec(input);
+    quote! {
+        ::tml::validate_blueprint(::tml::root::<#shape, _>(#body, #axes))
     }
 }
 
 pub(super) fn input_shape_ty(input: &InputSpec) -> TokenStream2 {
-    match input {
-        InputSpec::Features { features } => quote! { ::tml::shape!(features: #features) },
-        InputSpec::Image {
-            channels,
-            height,
-            width,
-        } => quote! { ::tml::shape!(channels: #channels, height: #height, width: #width) },
-        InputSpec::Volume {
-            channels,
-            depth,
-            height,
-            width,
-        } => {
-            quote! { ::tml::shape!(channels: #channels, depth: #depth, height: #height, width: #width) }
-        }
-    }
+    let names = input.fields.iter().map(|field| &field.name);
+    let extents = input.fields.iter().map(|field| &field.extent);
+    quote! { ::tml::shape!(#(#names: #extents),*) }
 }
 
 pub(super) fn input_size_expr(input: &InputSpec) -> TokenStream2 {
-    match input {
-        InputSpec::Features { features } => quote! { #features },
-        InputSpec::Image {
-            channels,
-            height,
-            width,
-        } => quote! { #channels * #height * #width },
-        InputSpec::Volume {
-            channels,
-            depth,
-            height,
-            width,
-        } => quote! { #channels * #depth * #height * #width },
-    }
+    let mut extents = input.fields.iter().map(|field| &field.extent);
+    let first = extents
+        .next()
+        .map(|expr| quote! { #expr })
+        .unwrap_or_else(|| quote! { 1 });
+    extents.fold(first, |acc, expr| quote! { (#acc) * (#expr) })
+}
+
+pub(super) fn input_axis_vec(input: &InputSpec) -> TokenStream2 {
+    let names = input.fields.iter().map(|field| &field.name);
+    quote! { vec![#(::tml::Axis::new(stringify!(#names))),*] }
 }

@@ -12,6 +12,6 @@ mod shared;
 
 pub use compose::{ConcatRuntime, ResidualRuntime, SeqRuntime, SumRuntime};
 pub use context::{GraphRuntime, MaterializeContext};
-pub use leaf::LeafRuntime;
+pub use leaf::{LeafRuntime, LinearRuntime};
 pub use runner::GraphRunner;
 pub use shared::SharedRuntime;

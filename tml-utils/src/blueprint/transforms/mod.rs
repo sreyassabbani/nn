@@ -9,7 +9,7 @@ mod compose;
 mod leaf;
 
 use super::{
-    Blueprint, ConcatSpec, ConvSpec, DenseSpec, FlattenSpec, IdentitySpec, ReLUSpec,
+    Blueprint, ConcatSpec, ConvSpec, DenseSpec, FlattenSpec, IdentitySpec, LinearSpec, ReLUSpec,
     RepeatStageSpec, ResidualSpec, SharedSpec, SigmoidSpec, SumSpec,
 };
 
@@ -21,6 +21,18 @@ pub fn dense<const OUT: usize>() -> Blueprint<DenseSpec<OUT, true>> {
 /// Creates a bias-free dense transform.
 pub fn dense_no_bias<const OUT: usize>() -> Blueprint<DenseSpec<OUT, false>> {
     Blueprint::new(DenseSpec)
+}
+
+/// Creates a last-axis linear transform.
+///
+/// This preserves every prefix axis and rewrites only the final axis extent.
+pub fn linear<const OUT: usize>() -> Blueprint<LinearSpec<OUT, true>> {
+    Blueprint::new(LinearSpec)
+}
+
+/// Creates a bias-free last-axis linear transform.
+pub fn linear_no_bias<const OUT: usize>() -> Blueprint<LinearSpec<OUT, false>> {
+    Blueprint::new(LinearSpec)
 }
 
 /// Creates a rectified linear activation transform.

@@ -84,6 +84,22 @@ let net = arch.materialize(InitConfig::new());
 let logits = net.predict(&[0.0; 3 * 32 * 32]);
 ```
 
+Arbitrary named axes also work now, and `linear(...)` rewrites only the final axis:
+```rs
+use tml::{InitConfig, network};
+
+let arch = network! {
+    input(windows: 6, metrics: 12)
+        -> linear(8)
+        -> relu
+        -> flatten
+        -> dense(3)
+};
+
+let net = arch.materialize(InitConfig::new().seed(41));
+let logits = net.predict(&[0.25; 6 * 12]);
+```
+
 
 ### Tensor Algebra
 
@@ -119,10 +135,11 @@ This style is what the public tensor API is optimized around:
 The examples in [`tml/examples`](tml/examples) are a good starting point:
 - [`tensor_basics.rs`](tml/examples/tensor_basics.rs) shows `shape!`, `Tensor<Shape>`, `TensorRef`, `TensorMut`, literals, indexing, and reshape
 - [`conv.rs`](tml/examples/conv.rs) shows the typed network DSL on image inputs
+- [`incident_windows.rs`](tml/examples/incident_windows.rs) shows arbitrary named axes plus last-axis `linear(...)`
 - [`named_sources.rs`](tml/examples/named_sources.rs) shows skip-style composition with named saved sources
 - [`rust_fragments.rs`](tml/examples/rust_fragments.rs) shows Rust-defined reusable fragments composed inside `network!`
-- [`api-previews/current/satellite_fpn.rs`](api-previews/current/satellite_fpn.rs) and [`api-previews/current/spectrogram_events.rs`](api-previews/current/spectrogram_events.rs) pressure-test the current surface on less cliché domains without slowing the compiled example set
-- [`api-previews/frontier/`](api-previews/frontier) contains the next frontier: multi-input roots, sequence-native operators, and richer graph regions
+- [`api-previews/current/satellite_fpn.rs`](api-previews/current/satellite_fpn.rs), [`api-previews/current/spectrogram_events.rs`](api-previews/current/spectrogram_events.rs), [`api-previews/current/seismic_arrivals.rs`](api-previews/current/seismic_arrivals.rs), and [`api-previews/current/program_windows.rs`](api-previews/current/program_windows.rs) pressure-test the current surface on less cliché domains without slowing the compiled example set
+- [`api-previews/frontier/`](api-previews/frontier) contains the next frontier: multi-input roots, explicit axis-operand operators, and richer graph regions
 - [`linear_regression.rs`](tml/examples/linear_regression.rs) and [`quadratic_regression.rs`](tml/examples/quadratic_regression.rs) show simple end-to-end training flows
 
 ### Automatic differentiation

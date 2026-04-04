@@ -1,21 +1,14 @@
 use syn::{Expr, Ident, LitInt};
 
 #[derive(Clone)]
-pub enum InputSpec {
-    Features {
-        features: Expr,
-    },
-    Image {
-        channels: Expr,
-        height: Expr,
-        width: Expr,
-    },
-    Volume {
-        channels: Expr,
-        depth: Expr,
-        height: Expr,
-        width: Expr,
-    },
+pub struct InputField {
+    pub name: Ident,
+    pub extent: Expr,
+}
+
+#[derive(Clone)]
+pub struct InputSpec {
+    pub fields: Vec<InputField>,
 }
 
 #[derive(Clone)]
@@ -27,6 +20,12 @@ pub enum KernelSpec {
 
 #[derive(Clone)]
 pub struct DenseSpec {
+    pub output: Expr,
+    pub bias: bool,
+}
+
+#[derive(Clone)]
+pub struct LinearSpec {
     pub output: Expr,
     pub bias: bool,
 }
@@ -49,6 +48,7 @@ pub struct HeadAst {
 #[derive(Clone)]
 pub enum StepAst {
     Dense(DenseSpec),
+    Linear(LinearSpec),
     Conv(Box<ConvSpec>),
     ReLU,
     Sigmoid,

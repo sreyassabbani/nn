@@ -23,7 +23,7 @@ It should not optimize for:
 
 ## Implemented Branch Reality
 
-The current `prototype/rust-fragments` branch is now opinionated enough that the
+The current `prototype/multi-input-sequences` branch is now opinionated enough that the
 implemented surface should be stated explicitly.
 
 What is real today:
@@ -34,12 +34,13 @@ What is real today:
 - `save(name)`, `sum_from(name)`, and `concat_from(name, axis)` work for topological long skips
 - rooted blueprints materialize via `materialize(InitConfig)`
 - tensor shapes preserve axis labels through `shape!(...)`
+- arbitrary named input axes in `network!` are real
+- last-axis `linear(...)` is real
 
 What is **not** real yet:
-- arbitrary axis labels in `network!` input syntax
 - general `on:` / `over:` transform operands
 - multi-input roots
-- token/feature-native operators like `linear(on: ..., out: ...)`
+- explicit axis-operand forms like `linear(on: ..., out: ...)`
 - true graph-runtime activation capture for named sources
 - real 3D conv in the blueprint DSL
 
@@ -60,10 +61,16 @@ Non-cliche but currently supported examples:
   - `/Users/sreysus/workflow/tml/api-previews/current/spectrogram_events.rs`
 - multispectral satellite feature-pyramid style model:
   - `/Users/sreysus/workflow/tml/api-previews/current/satellite_fpn.rs`
+- seismic arrival window scorer:
+  - `/Users/sreysus/workflow/tml/api-previews/current/seismic_arrivals.rs`
+- program-window trace classifier:
+  - `/Users/sreysus/workflow/tml/api-previews/current/program_windows.rs`
 - long-skip additive pipeline:
   - `/Users/sreysus/workflow/tml/tml/examples/named_sources.rs`
 - Rust-defined fragment composition:
   - `/Users/sreysus/workflow/tml/tml/examples/rust_fragments.rs`
+- compiled last-axis linear example:
+  - `/Users/sreysus/workflow/tml/tml/examples/incident_windows.rs`
 
 These examples show the current sweet spot:
 - rooted single-input models
@@ -90,8 +97,8 @@ where the current API is strong and where it still strains.
 Current reading of those sketches:
 - multi-input composition is still missing
 - 3D conv is still missing
-- sequence/token-native operators are still missing
-- the case for a future `linear(on: ..., out: ...)` surface remains strong
+- richer axis-operand forms are still missing
+- the case for a future `linear(on: ..., out: ...)` surface remains strong even though plain `linear(...)` is now real
 
 ## Current Prototype Status
 

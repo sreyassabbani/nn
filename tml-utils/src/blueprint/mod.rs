@@ -30,13 +30,14 @@ pub use rooted::{
 pub use runtime::{GraphRuntime, MaterializeContext};
 pub use specs::{
     BlueprintSpec, ConcatAlong, ConcatSpec, ConvSpec, DenseExpectsFlatInput, DenseSpec,
-    FlattenSpec, HeadsSpec, IdentitySpec, ReLUSpec, RepeatStageSpec, ResidualSpec, SeqCompatible,
-    SeqSpec, ShapePreserving, SharedSpec, SigmoidSpec, SumSpec, TransformSpec,
+    FlattenSpec, HeadsSpec, IdentitySpec, LinearOverLastAxis, LinearSpec, ReLUSpec,
+    RepeatStageSpec, ResidualSpec, SeqCompatible, SeqSpec, ShapePreserving, SharedSpec,
+    SigmoidSpec, SumSpec, TransformSpec,
 };
 #[allow(unused_imports)]
 pub use transforms::{
-    concat, conv, dense, dense_no_bias, flatten, identity, relu, repeat_stage, residual, share,
-    sigmoid, sum,
+    concat, conv, dense, dense_no_bias, flatten, identity, linear, linear_no_bias, relu,
+    repeat_stage, residual, share, sigmoid, sum,
 };
 
 pub(crate) use rooted::{describe_shape, features_axis};

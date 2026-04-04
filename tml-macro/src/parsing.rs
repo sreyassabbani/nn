@@ -1,5 +1,6 @@
 use crate::ast::{
-    ConvSpec, DenseSpec, HeadAst, InputSpec, KernelSpec, NetworkAst, PipelineAst, StepAst,
+    ConvSpec, DenseSpec, HeadAst, InputField, InputSpec, KernelSpec, LinearSpec, NetworkAst,
+    PipelineAst, StepAst,
 };
 use syn::parse::{Parse, ParseBuffer, ParseStream};
 use syn::punctuated::Punctuated;
@@ -57,6 +58,7 @@ fn parse_step(input: ParseStream) -> Result<StepAst> {
     if let Some(keyword) = peek_ident_string(input) {
         return match keyword.as_str() {
             "dense" => parse_dense(input),
+            "linear" => parse_linear(input),
             "conv" => parse_conv(input),
             "relu" | "ReLU" => {
                 let _: Ident = input.parse()?;
@@ -112,6 +114,34 @@ fn parse_dense(input: ParseStream) -> Result<StepAst> {
     }
 
     Ok(StepAst::Dense(DenseSpec { output, bias }))
+}
+
+fn parse_linear(input: ParseStream) -> Result<StepAst> {
+    let _: Ident = input.parse()?;
+    let content;
+    parenthesized!(content in input);
+
+    let output: Expr = content.parse()?;
+    let mut bias = true;
+
+    while content.peek(Token![,]) {
+        content.parse::<Token![,]>()?;
+        if content.is_empty() {
+            break;
+        }
+
+        let key: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+        match key.to_string().as_str() {
+            "bias" => {
+                let value: LitBool = content.parse()?;
+                bias = value.value;
+            }
+            _ => return Err(syn::Error::new(key.span(), "unsupported linear option")),
+        }
+    }
+
+    Ok(StepAst::Linear(LinearSpec { output, bias }))
 }
 
 fn parse_conv(input: ParseStream) -> Result<StepAst> {
@@ -288,33 +318,24 @@ fn parse_input(input: ParseStream) -> Result<InputSpec> {
     parenthesized!(content in input);
 
     let fields = parse_named_fields(&content)?;
-    match fields.as_slice() {
-        [(name, features)] if name == "features" => Ok(InputSpec::Features {
-            features: features.clone(),
-        }),
-        [(a, channels), (b, height), (c, width)]
-            if a == "channels" && b == "height" && c == "width" =>
-        {
-            Ok(InputSpec::Image {
-                channels: channels.clone(),
-                height: height.clone(),
-                width: width.clone(),
-            })
-        }
-        [(a, channels), (b, depth), (c, height), (d, width)]
-            if a == "channels" && b == "depth" && c == "height" && d == "width" =>
-        {
-            Ok(InputSpec::Volume {
-                channels: channels.clone(),
-                depth: depth.clone(),
-                height: height.clone(),
-                width: width.clone(),
-            })
-        }
-        _ => Err(content.error(
-            "input(...) expects exactly one of: features: N | channels: C, height: H, width: W | channels: C, depth: D, height: H, width: W",
-        )),
+    if fields.is_empty() || fields.len() > 4 {
+        return Err(content.error("input(...) expects between 1 and 4 named axes"));
     }
+
+    let mut seen = std::collections::HashSet::new();
+    let mut normalized = Vec::with_capacity(fields.len());
+    for (name, extent) in fields {
+        let key = name.to_string();
+        if !seen.insert(key.clone()) {
+            return Err(syn::Error::new(
+                name.span(),
+                format!("duplicate input axis `{key}`"),
+            ));
+        }
+        normalized.push(InputField { name, extent });
+    }
+
+    Ok(InputSpec { fields: normalized })
 }
 
 fn parse_named_fields(input: &ParseBuffer<'_>) -> Result<Vec<(Ident, Expr)>> {

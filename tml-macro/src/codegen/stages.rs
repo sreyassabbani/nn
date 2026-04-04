@@ -1,6 +1,6 @@
 //! Lowering helpers for individual transform stages.
 
-use crate::ast::{ConvSpec, DenseSpec, KernelSpec, PipelineAst};
+use crate::ast::{ConvSpec, DenseSpec, KernelSpec, LinearSpec, PipelineAst};
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Error, Expr, ExprLit, ExprPath, ExprTuple, Lit, Result, spanned::Spanned};
@@ -14,6 +14,15 @@ pub(super) fn lower_dense(spec: &DenseSpec) -> Result<TokenStream2> {
         quote! { ::tml::dense::<{ #output }>() }
     } else {
         quote! { ::tml::dense_no_bias::<{ #output }>() }
+    })
+}
+
+pub(super) fn lower_linear(spec: &LinearSpec) -> Result<TokenStream2> {
+    let output = &spec.output;
+    Ok(if spec.bias {
+        quote! { ::tml::linear::<{ #output }>() }
+    } else {
+        quote! { ::tml::linear_no_bias::<{ #output }>() }
     })
 }
 
