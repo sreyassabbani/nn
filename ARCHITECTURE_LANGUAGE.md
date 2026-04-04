@@ -57,9 +57,9 @@ These are representative examples of the branch as it exists today.
 
 Non-cliche but currently supported examples:
 - spectrogram event detector:
-  - `/Users/sreysus/workflow/tml/api-previews/spectrogram_events.rs`
+  - `/Users/sreysus/workflow/tml/api-previews/current/spectrogram_events.rs`
 - multispectral satellite feature-pyramid style model:
-  - `/Users/sreysus/workflow/tml/api-previews/satellite_fpn.rs`
+  - `/Users/sreysus/workflow/tml/api-previews/current/satellite_fpn.rs`
 - long-skip additive pipeline:
   - `/Users/sreysus/workflow/tml/tml/examples/named_sources.rs`
 - Rust-defined fragment composition:
@@ -77,11 +77,15 @@ These sketches are intentionally not all implemented yet. They exist to reveal
 where the current API is strong and where it still strains.
 
 - bi-encoder retrieval:
-  - `/Users/sreysus/workflow/tml/api-previews/retrieval_biencoder.rs`
+  - `/Users/sreysus/workflow/tml/api-previews/frontier/retrieval_biencoder.rs`
 - cryo-EM volumetric U-Net:
-  - `/Users/sreysus/workflow/tml/api-previews/cryo_volume_unet.rs`
+  - `/Users/sreysus/workflow/tml/api-previews/frontier/cryo_volume_unet.rs`
 - program-trace transformer:
-  - `/Users/sreysus/workflow/tml/api-previews/program_trace_transformer.rs`
+  - `/Users/sreysus/workflow/tml/api-previews/frontier/program_trace_transformer.rs`
+- multimodal claims triage:
+  - `/Users/sreysus/workflow/tml/api-previews/frontier/multimodal_claims_triage.rs`
+- ops-trace ranker:
+  - `/Users/sreysus/workflow/tml/api-previews/frontier/ops_trace_ranker.rs`
 
 Current reading of those sketches:
 - multi-input composition is still missing
@@ -132,7 +136,8 @@ So the current recommendation is:
   - runtime efficiency becoming materially important for skip-heavy models
 
 Heavier API sketches that are useful for design pressure-testing but too expensive to keep in
-Cargo's normal example target set live under `/Users/sreysus/workflow/tml/api-previews/`.
+Cargo's normal example target set live under `/Users/sreysus/workflow/tml/api-previews/`,
+split into `current/` and `frontier/`.
 
 ## Development Philosophy
 

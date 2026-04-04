@@ -121,7 +121,8 @@ The examples in [`tml/examples`](tml/examples) are a good starting point:
 - [`conv.rs`](tml/examples/conv.rs) shows the typed network DSL on image inputs
 - [`named_sources.rs`](tml/examples/named_sources.rs) shows skip-style composition with named saved sources
 - [`rust_fragments.rs`](tml/examples/rust_fragments.rs) shows Rust-defined reusable fragments composed inside `network!`
-- [`api-previews/satellite_fpn.rs`](api-previews/satellite_fpn.rs) and [`api-previews/spectrogram_events.rs`](api-previews/spectrogram_events.rs) pressure-test the current surface on less cliché domains without slowing the compiled example set
+- [`api-previews/current/satellite_fpn.rs`](api-previews/current/satellite_fpn.rs) and [`api-previews/current/spectrogram_events.rs`](api-previews/current/spectrogram_events.rs) pressure-test the current surface on less cliché domains without slowing the compiled example set
+- [`api-previews/frontier/`](api-previews/frontier) contains the next frontier: multi-input roots, sequence-native operators, and richer graph regions
 - [`linear_regression.rs`](tml/examples/linear_regression.rs) and [`quadratic_regression.rs`](tml/examples/quadratic_regression.rs) show simple end-to-end training flows
 
 ### Automatic differentiation

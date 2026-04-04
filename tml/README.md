@@ -64,8 +64,9 @@ assert_eq!(flat.as_slice(), &[1., 2., 3., 4.]);
 - [`conv.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/conv.rs)
 - [`named_sources.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/named_sources.rs)
 - [`rust_fragments.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/rust_fragments.rs)
-- [`api-previews/satellite_fpn.rs`](https://github.com/sreyassabbani/tml/blob/main/api-previews/satellite_fpn.rs)
-- [`api-previews/spectrogram_events.rs`](https://github.com/sreyassabbani/tml/blob/main/api-previews/spectrogram_events.rs)
+- [`api-previews/current/satellite_fpn.rs`](https://github.com/sreyassabbani/tml/blob/main/api-previews/current/satellite_fpn.rs)
+- [`api-previews/current/spectrogram_events.rs`](https://github.com/sreyassabbani/tml/blob/main/api-previews/current/spectrogram_events.rs)
+- [`api-previews/frontier/`](https://github.com/sreyassabbani/tml/tree/main/api-previews/frontier)
 - [`linear_regression.rs`](https://github.com/sreyassabbani/tml/blob/main/tml/examples/linear_regression.rs)
 
 ## Version note
