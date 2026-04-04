@@ -53,6 +53,16 @@ pub enum StepAst {
     ReLU,
     Sigmoid,
     Flatten,
+    Save {
+        name: Ident,
+    },
+    SumFrom {
+        name: Ident,
+    },
+    ConcatFrom {
+        name: Ident,
+        axis: Ident,
+    },
     Ref(Expr),
     Share(Expr),
     Residual(Expr),

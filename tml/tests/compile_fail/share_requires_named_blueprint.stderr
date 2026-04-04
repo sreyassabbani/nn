@@ -1,4 +1,4 @@
-error: share(...) only accepts a previously bound blueprint identifier in this redesign
+error: share(...) only accepts a previously bound fragment identifier in this redesign
  --> tests/compile_fail/share_requires_named_blueprint.rs:8:37
   |
 8 |         input(features: 2) -> share(network! { relu })

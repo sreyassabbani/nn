@@ -1,7 +1,10 @@
+//! Initializers, optimizers, and training configuration.
+
 use crate::Float;
 use rand::Rng;
 use std::fmt;
 
+/// Initializes trainable parameter buffers.
 pub trait Initializer {
     fn fill<R: Rng + ?Sized>(
         &self,
@@ -12,6 +15,7 @@ pub trait Initializer {
     );
 }
 
+/// Uniform initializer over a caller-provided range.
 #[derive(Debug, Clone, Copy)]
 pub struct Uniform {
     pub low: Float,
@@ -38,6 +42,7 @@ impl Initializer for Uniform {
     }
 }
 
+/// Xavier/Glorot uniform initializer.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct XavierUniform;
 
@@ -55,6 +60,7 @@ impl Initializer for XavierUniform {
     }
 }
 
+/// Kaiming/He uniform initializer.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct KaimingUniform;
 
@@ -72,6 +78,7 @@ impl Initializer for KaimingUniform {
     }
 }
 
+/// Stateful parameter optimizer.
 pub trait Optimizer: fmt::Debug {
     fn begin_step(&mut self) {}
     fn update_parameter(
@@ -83,6 +90,7 @@ pub trait Optimizer: fmt::Debug {
     );
 }
 
+/// Stochastic gradient descent with optional weight decay.
 #[derive(Debug, Clone, Copy)]
 pub struct Sgd {
     pub lr: Float,
@@ -118,6 +126,7 @@ impl Optimizer for Sgd {
     }
 }
 
+/// Adam optimizer with per-parameter moment state.
 #[derive(Debug, Clone)]
 pub struct Adam {
     pub lr: Float,
@@ -190,6 +199,7 @@ impl Optimizer for Adam {
     }
 }
 
+/// High-level training configuration for [`crate::blueprint::Model::fit`].
 pub struct TrainConfig {
     optimizer: Box<dyn Optimizer>,
     pub epochs: usize,
@@ -209,6 +219,7 @@ impl fmt::Debug for TrainConfig {
 }
 
 impl TrainConfig {
+    /// Builds a config from an explicit optimizer implementation.
     pub fn new<O: Optimizer + 'static>(optimizer: O) -> Self {
         Self {
             optimizer: Box::new(optimizer),
@@ -218,24 +229,29 @@ impl TrainConfig {
         }
     }
 
+    /// Creates a config backed by [`Sgd`].
     pub fn sgd(lr: Float) -> Self {
         Self::new(Sgd::new(lr))
     }
 
+    /// Creates a config backed by [`Adam`].
     pub fn adam(lr: Float) -> Self {
         Self::new(Adam::new(lr))
     }
 
+    /// Sets the number of full passes over the sample set.
     pub fn epochs(mut self, epochs: usize) -> Self {
         self.epochs = epochs;
         self
     }
 
+    /// Sets the mini-batch size, clamping it to at least `1`.
     pub fn batch_size(mut self, batch_size: usize) -> Self {
         self.batch_size = batch_size.max(1);
         self
     }
 
+    /// Enables deterministic shuffling with a fixed seed.
     pub fn shuffle_seed(mut self, shuffle_seed: u64) -> Self {
         self.shuffle_seed = Some(shuffle_seed);
         self

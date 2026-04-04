@@ -1,3 +1,8 @@
+//! Procedural macros for the `tml` facade crate.
+//!
+//! This crate currently exposes [`network!`](macro@network), the typed
+//! architecture DSL used by the public `tml` API.
+
 use proc_macro::TokenStream;
 use syn::parse_macro_input;
 

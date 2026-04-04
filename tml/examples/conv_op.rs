@@ -1,6 +1,6 @@
 #![allow(incomplete_features)]
 #![allow(unused)]
-#![feature(generic_const_exprs)]
+#![feature(generic_const_exprs, adt_const_params, unsized_const_params)]
 
 use tml::conv::Conv;
 use tml::{Tensor, shape, tensor};

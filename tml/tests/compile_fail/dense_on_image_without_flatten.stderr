@@ -1,25 +1,25 @@
-error[E0277]: the trait bound `Dim<1, Dim<4, Dim<4, Nil>>>: tml_utils::blueprint::DenseExpectsFlatInput<2, true>` is not satisfied
+error[E0277]: the trait bound `Dim<1, Dim<4, Dim<4, Nil, "width">, "height">, "channels">: DenseExpectsFlatInput<2, true>` is not satisfied
  --> tests/compile_fail/dense_on_image_without_flatten.rs:7:13
   |
 7 |       let _ = network! {
   |  _____________^
 8 | |         input(channels: 1, height: 4, width: 4) -> dense(2)
 9 | |     };
-  | |_____^ the trait `tml_utils::blueprint::DenseExpectsFlatInput<2, true>` is not implemented for `Dim<1, Dim<4, Dim<4, Nil>>>`
+  | |_____^ the trait `DenseExpectsFlatInput<2, true>` is not implemented for `Dim<1, Dim<4, Dim<4, Nil, "width">, "height">, "channels">`
   |
-help: the trait `tml_utils::blueprint::DenseExpectsFlatInput<2, true>` is not implemented for `Dim<1, Dim<4, Dim<4, Nil>>>`
-      but it is implemented for `Dim<1, Nil>`
- --> $WORKSPACE/tml-utils/src/blueprint/transforms.rs
+help: the trait `DenseExpectsFlatInput<2, true>` is not implemented for `Dim<1, Dim<4, Dim<4, Nil, "width">, "height">, "channels">`
+      but it is implemented for `Dim<1, Nil, _>`
+ --> $WORKSPACE/tml-utils/src/blueprint/transforms/leaf.rs
   |
-  | / impl<const N: usize, const OUT: usize, const BIAS: bool> DenseExpectsFlatInput<OUT, BIAS>
-  | |     for shape!(N)
+  | / impl<const N: usize, const NAME: &'static str, const OUT: usize, const BIAS: bool>
+  | |     DenseExpectsFlatInput<OUT, BIAS> for Dim<N, Nil, NAME>
   | | where
   | |     [(); N]:,
   | |_____________^
-  = help: for that trait implementation, expected `Nil`, found `Dim<4, Dim<4, Nil>>`
-  = note: required for `tml_utils::blueprint::DenseSpec<2>` to implement `TransformSpec<Dim<1, Dim<4, Dim<4, Nil>>>>`
+  = help: for that trait implementation, expected `Nil`, found `Dim<4, Dim<4, Nil, "width">, "height">`
+  = note: required for `DenseSpec<2>` to implement `TransformSpec<Dim<1, Dim<4, Dim<4, Nil, "width">, "height">, "channels">>`
 note: required by a bound in `validate_blueprint`
- --> $WORKSPACE/tml-utils/src/blueprint.rs
+ --> $WORKSPACE/tml-utils/src/blueprint/rooted.rs
   |
   | pub fn validate_blueprint<InputShape, Spec>(
   |        ------------------ required by a bound in this function

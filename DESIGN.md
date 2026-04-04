@@ -1,5 +1,16 @@
 While iterating and refactoring this project, I had the following in mind.
 
+> [!NOTE]
+> This document contains historical design thinking. The current public
+> direction is blueprint-first:
+>
+> - Rust defines reusable fragments and contracts
+> - `network!` owns composition
+> - rooted blueprints materialize explicit model state
+>
+> For the current branch reality and API pressure-testing, see
+> [`ARCHITECTURE_LANGUAGE.md`](ARCHITECTURE_LANGUAGE.md).
+
 ## Overview of Goals and Philosophy
 - Strong Type Safety: Through Rust, leverage type-driven design features and patterns (const generics, zero-cost abstractions, typestate, etc) to catch mismatches and human errors <ins>at compile time</ins>; higly reflective of ["parse, don't validate"](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/).
 - Ergonomic API: Provide a <ins>clear and concise API</ins> for model construction, training, and testing.
@@ -22,48 +33,62 @@ pub struct Matrix<T, const N: usize, const M: usize> {
 3. Generate random vector and matrix using the `rand` crate.
 
 # API design
-There was a lot of thought put into API design. For example, consider where weights associated between two layers would be stored. Although it might not have seemed logical to associate weights with one layer, this ended up being the case to avoid keeping track of more indices, slightly improving performance and code readability.
+The project originally explored builder-style APIs, but the current direction is
+cleaner:
 
-### Initialization
+- reusable fragments and contracts live in ordinary Rust
+- `network!` owns architecture composition
+- the core enforces shape and extent rules
+- rooted blueprints materialize explicit trainable model state
+
+### Current shape of the API
 
 ```rs
-let network = ModelBuilder::new()
-  .input(dim!(128))
-  .hidden(dense!(64).activation(ReLU))
-  .output(dim!(1));
-```
-This would be the dream to walk towards. Firstly, the macro might be yelling at you. Let me explain. Since I wanted to put type-safety as the highest priority, I would need to have called an initializer function like `LayerBuilder::dense::<128, 128>()` no matter what because of const generics, which just looks ugly. So, a macro needed to be invoked in this context, which I call `dense!(n)`.
+use tml::{InitConfig, TrainConfig, network};
 
-However, the API ended up looking like this:
+let arch = network! {
+  input(features: 128) -> dense(64) -> relu -> dense(1)
+};
+
+let mut model = arch.materialize(InitConfig::new().seed(7));
+```
+
+For image-like models:
+
 ```rs
-let network = ModelBuilder::new()
-  .input(dim!(128))
-  .hidden(dense!(64, 64).activation(ReLU))
-  .output(dim!(1));
-```
-The stable Rust compiler can unfortunately not do inferences with const generics yet, so you have to be very explicit with the input and output dimensions of each layer. There [have](https://users.rust-lang.org/t/rust-type-inference-failing-with-const-generic/122682) [been](https://www.google.com/url?sa=t&source=web&rct=j&opi=89978449&url=https://stackoverflow.com/questions/71233548/rust-cannot-infer-the-value-of-const-parameter-when-a-default-is-provided&ved=2ahUKEwi0te-q7rSNAxWMSzABHVFpA7UQFnoECCEQAQ&usg=AOvVaw3mVoJL87CW0fTQjEX-4A8n) [numerous](https://github.com/rust-lang/rust/issues/98931) discussions on const generic inferences before, and it seems to be [pretty close](https://blog.rust-lang.org/inside-rust/2025/03/05/inferred-const-generic-arguments/) to becoming stabilized; this is something I would go back and fix once the Rust team stabilizes it.
+use tml::{InitConfig, network, vision};
 
-For now, to use the cleaner syntax, you must enable the `unstable` library feature and write `#![feature(generic_arg_infer)]` on Nightly builds.
+let tower = vision::common::stem::<8, 16>();
 
-Even in Nightly, I'm thinking of making the API look like this:
-```rs
-let network = ModelBuilder::new()
-  .input(dim!(128))
-  .hidden(LayerBuilder::dense(dim!(64)).activation(ReLU))
-  .output(dim!(1));
+let arch = network! {
+  input(channels: 3, height: 32, width: 32)
+    -> tower
+    -> save(low)
+    -> vision::common::residual_block::<16>()
+    -> concat_from(low, channels)
+    -> conv(12, kernel: 1)
+    -> flatten
+    -> dense(10)
+};
+
+let model = arch.materialize(InitConfig::new());
 ```
-Although it's significantly more terse, I feel it makes the structure of what you're building so much more obvious.
 
 ### Training/Testing
 
 ```rs
-let training_data = [(1.0, 2.0), /* more */].map(DataSample::from);
-network.fit(&training_data, TrainConfig::default());
+use tml::{Float, Sample, TrainConfig};
 
-let testing_data = [(3.0, 15.0), /* more */].map(DataSample::from);
-let y = network.predict(&[3.0]);
-dbg!(y);
+let samples = [(1.0, 2.0), (2.0, 4.0)].map(|(x, y)| Sample::new([x], [y]));
+
+let loss = model.fit(
+  &samples,
+  TrainConfig::sgd(0.01)
+    .epochs(200)
+    .batch_size(2)
+    .shuffle_seed(7),
+);
+
+let y = model.predict(&[3.0]);
+dbg!(loss, y);
 ```
-
-> [!NOTE]
-> This part is still being refactored.

@@ -1,0 +1,20 @@
+error[E0080]: evaluation panicked: conv kernel does not fit input height
+ --> $WORKSPACE/tml-utils/src/lib.rs
+  |
+  |     [(); conv_kernel_fits_input_checked(H, W, FH, FW, S, P)]:,
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `<() as tml::ConvKernelFitsInput<4, 4, 5, 5, 1, 0>>::{constant#0}` failed inside this call
+  |
+note: inside `conv_kernel_fits_input_checked`
+ --> $WORKSPACE/tml-utils/src/lib.rs
+  |
+  |     assert_conv_kernel_fits_input(h, w, fh, fw, stride, pad);
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: inside `assert_conv_kernel_fits_input`
+ --> $RUST/core/src/panic.rs
+  |
+  = note: the failure occurred here
+  |
+ ::: $WORKSPACE/tml-utils/src/lib.rs
+  |
+  |         panic!("conv kernel does not fit input height");
+  |         ----------------------------------------------- in this macro invocation

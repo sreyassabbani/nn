@@ -1,7 +1,7 @@
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
+#![feature(generic_const_exprs, adt_const_params, unsized_const_params)]
 
-use tml::{Float, InitConfig, network};
+use tml::{Float, FragmentExt, InitConfig, network, vision};
 
 fn assert_close<const N: usize>(left: [Float; N], right: [Float; N]) {
     for (lhs, rhs) in left.into_iter().zip(right) {
@@ -125,4 +125,190 @@ fn repeat_accepts_shape_preserving_blocks() {
     let model = arch.materialize(InitConfig::new().seed(3));
     let out = model.predict(&[1.0, -2.0]);
     assert_eq!(out.len(), 1);
+}
+
+#[test]
+fn manual_root_uses_shape_labels_in_summary_and_trace() {
+    type Spectrogram = tml::shape!(sensor: 1, time: 8, freq: 8);
+
+    let spec = tml::conv::<2, 3, 3, 1, 1>()
+        .then(tml::relu())
+        .then(tml::flatten())
+        .then(tml::dense::<3>());
+    let arch = tml::validate_blueprint(tml::root::<Spectrogram, _>(
+        spec,
+        vec![tml::Axis::CHANNELS, tml::Axis::HEIGHT, tml::Axis::WIDTH],
+    ));
+
+    let summary = arch.summary();
+    assert!(summary.contains("input (sensor: 1, time: 8, freq: 8)"));
+
+    let trace = arch.shape_trace();
+    assert!(trace.contains("(sensor: 1, time: 8, freq: 8) -> (sensor: 2, time: 8, freq: 8)"));
+    assert!(trace.contains("(sensor: 2, time: 8, freq: 8) -> (features: 128)"));
+}
+
+#[test]
+fn custom_labels_drive_concat_selection() {
+    type Tokens = tml::shape!(tokens: 2);
+
+    let spec = tml::concat(tml::Axis::new("tokens"), tml::identity(), tml::identity())
+        .then(tml::dense::<1>());
+    let arch = tml::validate_blueprint(tml::root::<Tokens, _>(spec, Vec::new()));
+
+    let summary = arch.summary();
+    assert!(summary.contains("input (tokens: 2)"));
+    assert!(summary.contains("concat(tokens)"));
+
+    let trace = arch.shape_trace();
+    assert!(trace.contains("(tokens: 2) -> (tokens: 4)"));
+
+    let model = arch.materialize(InitConfig::new().seed(19));
+    let out = model.predict(&[1.0, -1.0]);
+    assert_eq!(out.len(), 1);
+}
+
+#[test]
+fn saved_sources_can_be_summed_back_into_the_pipeline() {
+    let arch = network! {
+        input(features: 2)
+            -> dense(2)
+            -> relu
+            -> save(skip)
+            -> dense(2)
+            -> sum_from(skip)
+            -> dense(1)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(11));
+    let out = model.predict(&[0.25, -0.5]);
+    assert_eq!(out.len(), 1);
+}
+
+#[test]
+fn saved_sources_can_be_concatenated_back_into_the_pipeline() {
+    let arch = network! {
+        input(channels: 1, height: 8, width: 8)
+            -> conv(2, kernel: 3, pad: 1)
+            -> relu
+            -> save(skip)
+            -> conv(2, kernel: 3, pad: 1)
+            -> concat_from(skip, channels)
+            -> flatten
+            -> dense(3)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(17));
+    let out = model.predict(&[0.5; 64]);
+    assert_eq!(out.len(), 3);
+}
+
+fn user_defined_stem() -> vision::common::Stem<2, 2> {
+    vision::common::stem::<2, 2>()
+}
+
+#[derive(Clone)]
+struct NamedStem;
+
+impl tml::Fragment for NamedStem {
+    type Spec = vision::common::StemSpec<2, 2>;
+
+    fn into_blueprint(self) -> tml::Blueprint<Self::Spec> {
+        tml::into_blueprint(vision::common::stem::<2, 2>())
+    }
+}
+
+#[test]
+fn rust_defined_fragment_values_compose_inside_network_macro() {
+    let tower = vision::common::stem::<2, 2>().then_fragment(vision::common::residual_block::<2>());
+
+    let arch = network! {
+        input(channels: 2, height: 8, width: 8) -> tower -> flatten -> dense(4)
+    };
+
+    let summary = arch.summary();
+    assert!(summary.contains("conv(2, kernel: 3, stride: 1, pad: 1)"));
+    assert!(summary.contains("residual"));
+
+    let model = arch.materialize(InitConfig::new().seed(13));
+    let out = model.predict(&[0.5; 128]);
+    assert_eq!(out.len(), 4);
+}
+
+#[test]
+fn named_rust_defined_fragments_can_be_shared_by_the_macro() {
+    let block = vision::common::residual_block::<2>();
+
+    let unshared = network! {
+        input(channels: 2, height: 8, width: 8) -> block -> block -> flatten -> dense(1)
+    };
+    let shared = network! {
+        input(channels: 2, height: 8, width: 8) -> share(block) -> share(block) -> flatten -> dense(1)
+    };
+
+    assert!(shared.parameter_count() < unshared.parameter_count());
+}
+
+#[test]
+fn distinct_fragment_bindings_do_not_accidentally_share_parameters() {
+    let left = vision::common::stem::<2, 2>();
+    let right = vision::common::stem::<2, 2>();
+
+    let unshared = network! {
+        input(channels: 2, height: 8, width: 8) -> left -> right -> flatten -> dense(1)
+    };
+    let separately_shared = network! {
+        input(channels: 2, height: 8, width: 8) -> share(left) -> share(right) -> flatten -> dense(1)
+    };
+
+    assert_eq!(
+        separately_shared.parameter_count(),
+        unshared.parameter_count()
+    );
+}
+
+#[test]
+fn user_defined_fragment_values_can_be_bound_without_the_macro() {
+    let stem = user_defined_stem();
+    let arch = network! {
+        input(channels: 2, height: 8, width: 8) -> stem -> flatten -> dense(2)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(23));
+    let out = model.predict(&[1.0; 128]);
+    assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn named_fragment_types_can_be_bound_and_composed_inside_network_macro() {
+    let stem = NamedStem;
+    let arch = network! {
+        input(channels: 2, height: 8, width: 8) -> stem -> flatten -> dense(2)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(29));
+    let out = model.predict(&[1.0; 128]);
+    assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn rust_defined_fragment_factories_can_be_called_inside_network_macro() {
+    let arch = network! {
+        input(channels: 2, height: 8, width: 8) -> user_defined_stem() -> flatten -> dense(2)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(31));
+    let out = model.predict(&[0.25; 128]);
+    assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn built_in_fragment_factories_can_be_called_inside_network_macro() {
+    let arch = network! {
+        input(channels: 2, height: 8, width: 8) -> vision::common::stem::<2, 2>() -> flatten -> dense(2)
+    };
+
+    let model = arch.materialize(InitConfig::new().seed(37));
+    let out = model.predict(&[0.75; 128]);
+    assert_eq!(out.len(), 2);
 }

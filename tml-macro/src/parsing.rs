@@ -2,7 +2,8 @@ use crate::ast::{
     ConvSpec, DenseSpec, HeadAst, InputSpec, KernelSpec, NetworkAst, PipelineAst, StepAst,
 };
 use syn::parse::{Parse, ParseBuffer, ParseStream};
-use syn::{Expr, ExprPath, Ident, LitBool, LitInt, Result, Token, parenthesized};
+use syn::punctuated::Punctuated;
+use syn::{Expr, ExprCall, ExprPath, Ident, LitBool, LitInt, Path, Result, Token, parenthesized};
 
 impl Parse for NetworkAst {
     fn parse(input: ParseStream) -> Result<Self> {
@@ -69,6 +70,9 @@ fn parse_step(input: ParseStream) -> Result<StepAst> {
                 let _: Ident = input.parse()?;
                 Ok(StepAst::Flatten)
             }
+            "save" => parse_save(input),
+            "sum_from" => parse_sum_from(input),
+            "concat_from" => parse_concat_from(input),
             "share" => parse_share(input),
             "residual" => parse_residual(input),
             "repeat" => parse_repeat(input),
@@ -159,6 +163,42 @@ fn parse_share(input: ParseStream) -> Result<StepAst> {
     parenthesized!(content in input);
     let expr: Expr = content.parse()?;
     Ok(StepAst::Share(expr))
+}
+
+fn parse_save(input: ParseStream) -> Result<StepAst> {
+    let _: Ident = input.parse()?;
+    let content;
+    parenthesized!(content in input);
+    let name: Ident = content.parse()?;
+    if !content.is_empty() {
+        return Err(content.error("save(name) expects a single source name"));
+    }
+    Ok(StepAst::Save { name })
+}
+
+fn parse_sum_from(input: ParseStream) -> Result<StepAst> {
+    let _: Ident = input.parse()?;
+    let content;
+    parenthesized!(content in input);
+    let name: Ident = content.parse()?;
+    if !content.is_empty() {
+        return Err(content.error("sum_from(name) expects a single saved source name"));
+    }
+    Ok(StepAst::SumFrom { name })
+}
+
+fn parse_concat_from(input: ParseStream) -> Result<StepAst> {
+    let _: Ident = input.parse()?;
+    let content;
+    parenthesized!(content in input);
+    let name: Ident = content.parse()?;
+    content.parse::<Token![,]>()?;
+    let axis: Ident = content.parse()?;
+    if !content.is_empty() {
+        return Err(content
+            .error("concat_from(name, axis) expects exactly a saved source name and an axis"));
+    }
+    Ok(StepAst::ConcatFrom { name, axis })
 }
 
 fn parse_residual(input: ParseStream) -> Result<StepAst> {
@@ -324,16 +364,26 @@ fn parse_expr_list(content: &ParseBuffer<'_>) -> Result<Vec<Expr>> {
 }
 
 fn parse_reusable_expr(input: ParseStream) -> Result<Expr> {
-    if input.peek(Ident) && !input.peek2(Token![!]) {
-        let path = input.parse::<syn::Path>()?;
-        return Ok(Expr::Path(ExprPath {
+    let path: Path = input.parse()?;
+    let mut expr = Expr::Path(ExprPath {
+        attrs: Vec::new(),
+        qself: None,
+        path,
+    });
+
+    while input.peek(syn::token::Paren) {
+        let content;
+        let paren_token = parenthesized!(content in input);
+        let args = Punctuated::<Expr, Token![,]>::parse_terminated(&content)?;
+        expr = Expr::Call(ExprCall {
             attrs: Vec::new(),
-            qself: None,
-            path,
-        }));
+            func: Box::new(expr),
+            paren_token,
+            args,
+        });
     }
 
-    input.parse()
+    Ok(expr)
 }
 
 fn peek_ident(input: ParseStream, expected: &str) -> bool {

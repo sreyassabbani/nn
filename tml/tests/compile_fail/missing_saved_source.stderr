@@ -1,0 +1,5 @@
+error: unknown saved source `skip`
+ --> tests/compile_fail/missing_saved_source.rs:8:52
+  |
+8 |         input(features: 2) -> dense(2) -> sum_from(skip)
+  |                                                    ^^^^
